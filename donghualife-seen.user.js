@@ -3,7 +3,7 @@
 // @namespace    us_dhl_seen
 // @version      1.0.1
 // @description  Adds a ✅ marker to indicate watched episodes in season tables on donghualife.com. Persist state locally; toggle via a per‑row button; export/import JSON; reset marks. Debounced observers and a few a11y/robustness upgrades.
-// @author       you
+// @author       Aesthermortis
 // @match        https://donghualife.com/season/*
 // @run-at       document-idle
 // @grant        GM.getValue
@@ -11,7 +11,10 @@
 // @grant        GM_registerMenuCommand
 // @license      MIT
 // @noframes
-// @homepageURL  https://donghualife.com/
+// @downloadURL  https://raw.githubusercontent.com/Aesthermortis/donghualife-seen-userscript/refs/tags/v1.0.1/donghualife-seen.user.js
+// @updateURL    https://raw.githubusercontent.com/Aesthermortis/donghualife-seen-userscript/main/donghualife-seen.user.js
+// @supportURL   https://github.com/Aesthermortis/donghualife-seen-userscript/issues
+// @homepageURL  https://github.com/Aesthermortis/donghualife-seen-userscript
 // ==/UserScript==
 
 (() => {
