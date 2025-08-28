@@ -4,7 +4,8 @@
 // @version      1.0.2
 // @description  Adds a button to mark watched episodes in season tables on donghualife.com.
 // @author       Aesthermortis
-// @match        https://donghualife.com/season/*
+// @match        *://donghualife.com/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=donghualife.com
 // @run-at       document-idle
 // @grant        GM.getValue
 // @grant        GM.setValue
@@ -28,13 +29,19 @@
   const STORE_KEY = "seenEpisodes:v1";
   const ROW_SEEN_ATTR = "data-us-dhl-decorated";
   const BTN_CLASS = "us-dhl-seen-btn";
+  const ROW_SEEN_CLASS = "us-dhl-seen-row";
   const CTRL_CELL_CLASS = "us-dhl-ctrlcol";
   const TABLE_MARK_ATTR = "data-us-dhl-ctrlcol";
 
   const CSS = `
     .${BTN_CLASS}{
-      cursor:pointer; user-select:none; font-size:0.9rem; line-height:1;
-      padding:0.28rem 0.6rem; border:1px solid rgba(255,255,255,.18); border-radius:0.75rem;
+      cursor:pointer;
+      user-select:none;
+      font-size:0.9rem;
+      line-height:1;
+      padding:0.28rem 0.6rem;
+      border:1px solid rgba(255,255,255,.18);
+      border-radius:0.75rem;
       background:rgba(255,255,255,.06);
       color:#f5f7fa;
       transition:filter .15s ease, background .15s ease, border-color .15s ease;
@@ -53,6 +60,19 @@
       width:1%;
       white-space:nowrap;
       text-align:right;
+    }
+
+    .${ROW_SEEN_CLASS}{
+      background: rgba(16,185,129,.06);
+      transition: background .15s ease;
+    }
+
+    .${ROW_SEEN_CLASS} a{
+      opacity: .95;
+    }
+
+    .${ROW_SEEN_CLASS} .${BTN_CLASS}[aria-pressed="true"]{
+      filter: none;
     }
   `;
 
@@ -102,6 +122,13 @@
     return btn;
   }
 
+  // Row-level UI helper: toggle seen styling and expose state
+  function setRowSeenState(tr, seen) {
+    if (!tr) return;
+    tr.classList.toggle(ROW_SEEN_CLASS, !!seen);
+    tr.setAttribute("data-us-dhl-seen-state", seen ? "1" : "0");
+  }
+
   // Simple debounce to prevent thrashing on heavy DOM updates
   function debounce(fn, ms) {
     let t;
@@ -111,6 +138,45 @@
     };
   }
 
+  // Patrones de rutas que representan páginas de episodios (ajustables)
+  const EP_PATTERNS = [
+    /\/episode\//i,
+    /\/watch\//i,
+    /\/capitulo\//i,
+    /\/ver\//i,
+  ];
+
+  function isEpisodePathname(pn) {
+    try {
+      return EP_PATTERNS.some((rx) => rx.test(pn));
+    } catch {
+      return false;
+    }
+  }
+
+  function isPrimaryUnmodifiedClick(e, link) {
+    return (
+      e.button === 0 &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.shiftKey &&
+      !e.altKey &&
+      (!link || link.target !== "_blank")
+    );
+  }
+
+  // Reflejar el estado del botón en una fila de temporada (si existe)
+  function applySeenUIInRowForLink(link) {
+    const tr = link.closest("tr");
+    if (!tr) return;
+    const btn = tr.querySelector("." + BTN_CLASS);
+    if (!btn) return;
+    btn.textContent = "Visto";
+    btn.title = "Marcado como visto. Click para desmarcar.";
+    btn.setAttribute("aria-pressed", "true");
+    setRowSeenState(tr, true);
+  }
+
   function observeMutations(callback) {
     const debounced = debounce(callback, 120);
     const mo = new MutationObserver((muts) => {
@@ -118,8 +184,9 @@
         muts.some(
           (m) => (m.addedNodes && m.addedNodes.length) || m.type === "childList"
         )
-      )
+      ) {
         debounced();
+      }
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
     return mo;
@@ -193,6 +260,7 @@
 
     const id = computeEpisodeId(tr);
     const seen = !!store[id];
+    setRowSeenState(tr, seen);
 
     // Prepare stable control column
     const table = tr.closest("table");
@@ -207,6 +275,40 @@
     holder.style.gap = "0.5rem";
     holder.appendChild(btn);
     controlCell.appendChild(holder);
+
+    // Auto-mark al hacer clic en el enlace del episodio
+    const link = $("a[href]", tr);
+    if (link) {
+      link.addEventListener(
+        "click",
+        async (e) => {
+          const alreadySeen = !!store[id];
+          // Actualiza UI y storage (idempotente)
+          const applySeenUI = () => {
+            btn.textContent = "Visto";
+            btn.title = "Marcado como visto. Click para desmarcar.";
+            btn.setAttribute("aria-pressed", "true");
+          };
+
+          if (!alreadySeen) {
+            store[id] = { t: Date.now() };
+          }
+
+          if (isPrimaryUnmodifiedClick(e, link)) {
+            // Clic primario en misma pestaña: garantizamos persistencia antes de navegar
+            e.preventDefault();
+            await saveStore(store);
+            applySeenUI();
+            location.href = link.href;
+          } else {
+            // Middle/CTRL/CMD/Shift o target=_blank: no bloqueamos la navegación
+            if (!alreadySeen) saveStore(store);
+            applySeenUI();
+          }
+        },
+        { passive: false }
+      );
+    }
 
     btn.addEventListener(
       "click",
@@ -226,6 +328,7 @@
           ? "Marcado como visto. Click para desmarcar."
           : "No visto. Click para marcar.";
         btn.setAttribute("aria-pressed", String(nowSeen));
+        setRowSeenState(tr, nowSeen);
       },
       { passive: true }
     );
@@ -253,6 +356,56 @@
     }
 
     const store = await loadStore();
+
+    try {
+      if (isEpisodePathname(location.pathname)) {
+        if (!store[location.pathname]) {
+          store[location.pathname] = { t: Date.now() };
+          await saveStore(store);
+        }
+      }
+    } catch {
+      /* noop */
+    }
+
+    document.addEventListener(
+      "click",
+      async (e) => {
+        const link =
+          e.target && e.target.closest && e.target.closest("a[href]");
+        if (!link) return;
+
+        let url;
+        try {
+          url = new URL(link.href, location.origin);
+        } catch {
+          return;
+        }
+        if (url.origin !== location.origin) return; // solo mismo origen
+        if (!isEpisodePathname(url.pathname)) return;
+
+        const already = !!store[url.pathname];
+
+        if (isPrimaryUnmodifiedClick(e, link)) {
+          // Clic primario en misma pestaña: asegurar persistencia antes de navegar
+          e.preventDefault();
+          if (!already) {
+            store[url.pathname] = { t: Date.now() };
+            await saveStore(store);
+          }
+          applySeenUIInRowForLink(link); // si es una fila de temporada, refleja el botón
+          location.href = url.href;
+        } else {
+          // Middle/Ctrl/Cmd/Shift o target=_blank: no bloqueamos navegación
+          if (!already) {
+            store[url.pathname] = { t: Date.now() };
+            saveStore(store); // async fire-and-forget
+          }
+          applySeenUIInRowForLink(link);
+        }
+      },
+      { capture: true, passive: false }
+    );
 
     const applyAll = async (root = document) => {
       const rows = scanRows(root);
