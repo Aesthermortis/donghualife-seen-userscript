@@ -264,7 +264,7 @@
     btn.textContent = isSeen ? "✔️" : "⭕";
     btn.setAttribute("aria-pressed", String(!!isSeen));
     btn.setAttribute("aria-label", "Alternar episodio visto");
-    
+
     return btn;
   }
 
@@ -274,11 +274,11 @@
       ? "Marcado como visto. Click para desmarcar."
       : "No visto. Click para marcar.";
     btn.setAttribute("aria-pressed", String(!!isSeen));
-    
+
     // Remove any existing hover listeners
     const newBtn = btn.cloneNode(true);
     btn.parentNode.replaceChild(newBtn, btn);
-    
+
     // Add hover behavior for seen episodes
     if (isSeen) {
       newBtn.addEventListener("mouseenter", () => {
@@ -287,8 +287,15 @@
       newBtn.addEventListener("mouseleave", () => {
         newBtn.textContent = "✔️";
       });
+    } else {
+      newBtn.addEventListener("mouseenter", () => {
+        newBtn.textContent = "✔️";
+      });
+      newBtn.addEventListener("mouseleave", () => {
+        newBtn.textContent = "⭕";
+      });
     }
-    
+
     return newBtn;
   }
 
@@ -448,19 +455,19 @@
     if (episode.getAttribute(EPISODE_SEEN_ATTR) === "1") return; // already processed
 
     const id = computeEpisodeIdFromElement(episode);
-    
+
     // Check both store and existing element state to determine if episode is seen
     const storeHasSeen = !!store[id];
     const elementHasSeen = episode.classList.contains(EPISODE_SEEN_CLASS) && 
-                          episode.getAttribute("data-us-dhl-episode-seen") === "1";
+      episode.getAttribute("data-us-dhl-episode-seen") === "1";
     const seen = storeHasSeen || elementHasSeen;
-    
+
     // If element has seen state but store doesn't, sync store with element state
     if (elementHasSeen && !storeHasSeen) {
       store[id] = { t: Date.now() };
       await saveStore(store);
     }
-    
+
     setEpisodeSeenState(episode, seen);
 
     // Check if episode already has a button (in case of partial decoration)
@@ -471,11 +478,9 @@
 
     let btn = makeEpisodeSeenButton(seen);
     episode.appendChild(btn);
-    
+
     // Update button state for seen episodes (must be done after adding to DOM)
-    if (seen) {
-      btn = updateEpisodeButtonState(btn, true);
-    }
+    btn = updateEpisodeButtonState(btn, seen);
 
     // Auto-mark al hacer clic en el enlace del episodio
     const link = $("a[href]", episode);
@@ -484,7 +489,7 @@
         "click",
         async (e) => {
           const alreadySeen = !!store[id];
-          
+
           if (!alreadySeen) {
             store[id] = { t: Date.now() };
           }
@@ -512,7 +517,7 @@
       ev.stopPropagation();
       ev.preventDefault();
       const nowSeen = !store[id];
-      
+
       if (nowSeen) {
         store[id] = { t: Date.now() };
       } else {
@@ -522,7 +527,7 @@
 
       btn = updateEpisodeButtonState(btn, nowSeen);
       setEpisodeSeenState(episode, nowSeen);
-      
+
       // Re-attach the click handler to the new button
       btn.addEventListener("click", handleButtonClick, { passive: false });
     };
