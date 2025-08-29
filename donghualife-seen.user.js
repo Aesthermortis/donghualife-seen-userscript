@@ -47,20 +47,20 @@
       user-select:none;
       font-size:0.9rem;
       line-height:1;
-      padding:0.28rem 0.6rem;
-      border:1px solid rgba(255,255,255,.18);
+      padding:0.32rem 0.65rem;
+      border:none;
       border-radius:0.75rem;
       background:rgba(255,255,255,.06);
       color:#f5f7fa;
-      transition:filter .15s ease, background .15s ease, border-color .15s ease;
+      transition:filter .15s ease, background .15s ease;
       white-space: nowrap;
     }
 
-    .${BTN_CLASS}:hover{ filter:brightness(1.05); }
+    .${BTN_CLASS}:hover{ filter:brightness(1.2); }
 
     .${BTN_CLASS}[aria-pressed="true"]{
-      background:rgba(16,185,129,.18); border-color:rgba(16,185,129,.35);
-      color:#e8fff0;
+      background:rgba(4, 120, 87, .3); /* Verde más oscuro */
+      color:#f0fff8;
     }
 
     .${BTN_CLASS}[aria-pressed="true"]:hover{ filter:brightness(1.3); }
@@ -79,15 +79,13 @@
       right: 8px;
       z-index: 10;
       /* Fondo más opaco para legibilidad sobre imágenes */
-      background: rgba(20, 20, 22, 0.65);
-      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(20, 20, 22, 0.7);
       box-shadow: 0 2px 8px rgba(0,0,0,0.3);
       backdrop-filter: blur(4px);
     }
 
     .${CARD_BTN_CLASS}[aria-pressed="true"] {
-      background: rgba(16, 185, 129, 0.6);
-      border-color: rgba(16, 185, 129, 0.8);
+      background: rgba(4, 120, 87, 0.75); /* Verde más oscuro */
     }
 
     .${CTRL_CELL_CLASS}{
@@ -98,18 +96,18 @@
 
     /* Estilo de item marcado (solo si el highlight global está ON) */
     .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS}{
-      background: rgba(16,185,129,.06);
+      background: rgba(4, 120, 87, .1);
       transition: background .15s ease;
     }
 
     /* Intensidad al hover (solo si el highlight global está ON) */
     .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS}:hover{
-      background: rgba(16,185,129,.12);
+      background: rgba(4, 120, 87, .18);
     }
 
     /* A11y: también resalta cuando el item contiene foco (navegación con teclado) */
     .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS}:focus-within{
-      background: rgba(16,185,129,.12);
+      background: rgba(4, 120, 87, .18);
     }
 
     /* Evitar “parpadeo” en móvil/touch: aplica hover solo en puntero fino */
