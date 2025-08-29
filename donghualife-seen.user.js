@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DonghuaLife – Mark Watched Episodes (✅)
 // @namespace    us_dhl_seen
-// @version      1.0.2
+// @version      1.0.3
 // @description  Adds a button to mark watched episodes in season tables and episode cards on donghualife.com.
 // @author       Aesthermortis
 // @match        *://donghualife.com/*
@@ -36,8 +36,8 @@
   const CTRL_CELL_CLASS = "us-dhl-ctrlcol";
   const TABLE_MARK_ATTR = "data-us-dhl-ctrlcol";
 
-  // Default row highlight (true = ON por defecto, false = OFF por defecto)
-  const DEFAULT_ROW_HL = false; // cámbialo a false si quieres opt-in por defecto
+  // Default row highlight (true = ON by default, false = OFF by default)
+  const DEFAULT_ROW_HL = false;
 
   // CSS styles
   const CSS = `
@@ -133,19 +133,183 @@
     .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS} .${BTN_CLASS}[aria-pressed="true"]{
       filter: none;
     }
+
+    /* --- Modern UI (Toasts & Modals) --- */
+    .us-dhl-toast-container {
+      position: fixed; top: 1rem; right: 1rem; z-index: 9999;
+      display: flex; flex-direction: column; gap: 0.5rem;
+    }
+    .us-dhl-toast {
+      padding: 0.75rem 1.25rem; border-radius: 0.5rem; color: #fff;
+      background: #333; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      animation: us-dhl-toast-in .3s ease;
+    }
+    @keyframes us-dhl-toast-in { from { opacity:0; transform:translateX(100%); } }
+
+    .us-dhl-modal-overlay {
+      position: fixed; inset: 0; z-index: 9998;
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+      animation: us-dhl-fade-in .2s ease;
+    }
+    @keyframes us-dhl-fade-in { from { opacity: 0; } }
+
+    .us-dhl-modal {
+      background: #1e1e20; border-radius: 0.75rem; color: #f5f7fa;
+      width: 90%; max-width: 500px; box-shadow: 0 5px 20px rgba(0,0,0,0.4);
+      animation: us-dhl-modal-in .2s ease-out;
+    }
+    @keyframes us-dhl-modal-in { from { opacity:0; transform:scale(0.95); } }
+
+    .us-dhl-modal-header { padding: 1rem 1.5rem; font-size: 1.2rem; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,.1); }
+    .us-dhl-modal-body { padding: 1.5rem; }
+    .us-dhl-modal-body p { margin: 0 0 1rem; line-height: 1.5; }
+    .us-dhl-modal-body textarea, .us-dhl-modal-body input {
+      width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,.2);
+      background: #2a2a2e; color: #f5f7fa; font-family: inherit; font-size: 1rem;
+      box-sizing: border-box; /* Added for consistent sizing */
+    }
+    .us-dhl-modal-body textarea { min-height: 120px; resize: vertical; }
+
+    .us-dhl-modal-footer {
+      padding: 1rem 1.5rem; display: flex; justify-content: flex-end; gap: 0.75rem;
+      background: rgba(0,0,0,.1); border-top: 1px solid rgba(255,255,255,.1);
+      border-bottom-left-radius: 0.75rem; border-bottom-right-radius: 0.75rem;
+    }
+    .us-dhl-modal-btn {
+      padding: 0.5rem 1rem; border-radius: 0.5rem; border: none; cursor: pointer;
+      font-weight: 600; transition: filter .15s ease;
+    }
+    .us-dhl-modal-btn:hover { filter: brightness(1.15); }
+    .us-dhl-modal-btn.primary { background: #059669; color: #fff; }
+    .us-dhl-modal-btn.secondary { background: rgba(255,255,255,.1); color: #f5f7fa;
+    }
   `;
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-  // Inyecta CSS si no está ya presente
+  // Injects CSS if not already present
   function injectCSS() {
-    if ($("#us-dhl-seen-style")) return;
-    const s = document.createElement("style");
-    s.id = "us-dhl-seen-style";
-    s.textContent = CSS;
-    document.head.appendChild(s);
+    if ($("#us-dhl-seen-style")) {
+      return;
+    }
+    const style = document.createElement("style");
+    style.id = "us-dhl-seen-style";
+    style.textContent = CSS;
+    document.head.appendChild(style);
   }
+
+  const UImanager = {
+    _getToastContainer() {
+      let container = $("#us-dhl-toast-container");
+      if (!container) {
+        container = document.createElement("div");
+        container.id = "us-dhl-toast-container";
+        container.className = "us-dhl-toast-container";
+        document.body.appendChild(container);
+      }
+      return container;
+    },
+    showToast(message, duration = 3000) {
+      const toast = document.createElement("div");
+      toast.className = "us-dhl-toast";
+      toast.textContent = message;
+      this._getToastContainer().appendChild(toast);
+      setTimeout(() => toast.remove(), duration);
+    },
+    _createModal(content) {
+      const overlay = document.createElement("div");
+      overlay.className = "us-dhl-modal-overlay";
+      overlay.innerHTML = `
+        <div class="us-dhl-modal" role="dialog" aria-modal="true">
+          ${content}
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      return overlay;
+    },
+    showConfirm({
+      title,
+      text,
+      okLabel = "Aceptar",
+      cancelLabel = "Cancelar",
+    }) {
+      return new Promise((resolve) => {
+        const modalHTML = `
+          <div class="us-dhl-modal-header">${title}</div>
+          <div class="us-dhl-modal-body"><p>${text}</p></div>
+          <div class="us-dhl-modal-footer">
+            <button class="us-dhl-modal-btn secondary">${cancelLabel}</button>
+            <button class="us-dhl-modal-btn primary">${okLabel}</button>
+          </div>
+        `;
+        const overlay = this._createModal(modalHTML);
+        const modal = $(".us-dhl-modal", overlay);
+        const close = (value) => {
+          overlay.remove();
+          resolve(value);
+        };
+
+        modal.addEventListener("click", (e) => e.stopPropagation());
+        overlay.addEventListener("click", () => close(false));
+        $(".primary", overlay).addEventListener("click", () => close(true));
+        $(".secondary", overlay).addEventListener("click", () => close(false));
+      });
+    },
+    showPrompt({ title, text, okLabel = "Aceptar", cancelLabel = "Cancelar" }) {
+      return new Promise((resolve) => {
+        const modalHTML = `
+                <div class="us-dhl-modal-header">${title}</div>
+                <div class="us-dhl-modal-body">
+                    <p>${text}</p>
+                    <textarea></textarea>
+                </div>
+                <div class="us-dhl-modal-footer">
+                    <button class="us-dhl-modal-btn secondary">${cancelLabel}</button>
+                    <button class="us-dhl-modal-btn primary">${okLabel}</button>
+                </div>
+            `;
+        const overlay = this._createModal(modalHTML);
+        const modal = $(".us-dhl-modal", overlay);
+        const input = $("textarea", overlay);
+        const close = (value) => {
+          overlay.remove();
+          resolve(value);
+        };
+
+        modal.addEventListener("click", (e) => e.stopPropagation());
+        overlay.addEventListener("click", () => close(null));
+        $(".primary", overlay).addEventListener("click", () =>
+          close(input.value)
+        );
+        $(".secondary", overlay).addEventListener("click", () => close(null));
+        input.focus();
+      });
+    },
+    showExport({ title, text, data }) {
+      const modalHTML = `
+            <div class="us-dhl-modal-header">${title}</div>
+            <div class="us-dhl-modal-body">
+                <p>${text}</p>
+                <textarea readonly></textarea>
+            </div>
+            <div class="us-dhl-modal-footer">
+                <button class="us-dhl-modal-btn primary">Cerrar</button>
+            </div>
+        `;
+      const overlay = this._createModal(modalHTML);
+      const modal = $(".us-dhl-modal", overlay);
+      const textarea = $("textarea", overlay);
+      textarea.value = data;
+      const close = () => overlay.remove();
+
+      modal.addEventListener("click", (e) => e.stopPropagation());
+      overlay.addEventListener("click", close);
+      $(".primary", overlay).addEventListener("click", close);
+      textarea.select();
+    },
+  };
 
   async function loadStore() {
     const raw = await GM.getValue(STORE_KEY, "{}");
@@ -160,7 +324,7 @@
     await GM.setValue(STORE_KEY, JSON.stringify(obj));
   }
 
-  /* Carga las preferencias del usuario */
+  /* Loads user preferences */
   async function loadPrefs() {
     const raw = await GM.getValue(PREFS_KEY, "{}");
     try {
@@ -170,31 +334,32 @@
     }
   }
 
-  /* Guarda las preferencias del usuario */
+  /* Saves user preferences */
   async function savePrefs(prefs) {
     await GM.setValue(PREFS_KEY, JSON.stringify(prefs));
   }
 
-  // Devuelve el estado efectivo (storage si existe, si no el default de código)
+  // Returns the effective state (storage if it exists, otherwise the code default)
   function isRowHlOn(prefs) {
     return typeof prefs.rowHighlight === "boolean"
       ? prefs.rowHighlight
       : DEFAULT_ROW_HL;
   }
 
-  // Aplica las preferencias visuales (resalte de filas)
+  // Applies visual preferences (row highlighting)
   function applyPrefs(prefs) {
-    const on = isRowHlOn(prefs);
-    document.documentElement.classList.toggle(ROOT_HL_CLASS, on);
+    document.documentElement.classList.toggle(ROOT_HL_CLASS, isRowHlOn(prefs));
   }
 
   function computeId(element) {
     // Prefer the first absolute pathname to be stable across navigations
     const a = $("a[href]", element);
-    if (a) return new URL(a.href, location.origin).pathname;
+    if (a) {
+      return new URL(a.href, location.origin).pathname;
+    }
     // Fallback: compact hash-like key from element text
     const txt = (element.textContent || "").replace(/\s+/g, " ").trim();
-    const prefix = element.tagName === 'TR' ? 'row:' : 'item:';
+    const prefix = element.tagName === "TR" ? "row:" : "item:";
     return prefix + txt.slice(0, 160);
   }
 
@@ -217,7 +382,9 @@
 
   // UI helper: toggle seen styling and expose state
   function setItemSeenState(item, seen) {
-    if (!item) return;
+    if (!item) {
+      return;
+    }
     item.classList.toggle(ITEM_SEEN_CLASS, !!seen);
     item.setAttribute("data-us-dhl-seen-state", seen ? "1" : "0");
   }
@@ -231,7 +398,7 @@
     };
   }
 
-  // Patrones de rutas que representan páginas de episodios (ajustables)
+  // Route patterns that represent episode pages (adjustable)
   const EP_PATTERNS = [
     /\/episode\//i,
     /\/watch\//i,
@@ -258,7 +425,7 @@
     );
   }
 
-  // Reflejar el estado del botón en un item (fila o tarjeta)
+  // Reflect button state on an item (row or card)
   function applySeenUIForItemWithLink(link) {
     const item = link.closest("tr, .views-row .episode");
     if (item) {
@@ -287,31 +454,51 @@
 
   async function exportJSON() {
     const data = await GM.getValue(STORE_KEY, "{}");
-    prompt("Copia tu respaldo de episodios vistos:", data);
+    UImanager.showExport({
+      title: "Exportar Respaldo",
+      text: "Copia este texto para guardar un respaldo de tus episodios vistos.",
+      data: data,
+    });
   }
 
   async function importJSON() {
-    const txt = prompt("Pega el JSON de respaldo:");
-    if (!txt) return;
+    const txt = await UImanager.showPrompt({
+      title: "Importar Respaldo",
+      text: "Pega aquí el JSON de respaldo que guardaste previamente.",
+    });
+    if (txt === null) {
+      // User cancelled
+      return;
+    }
     try {
       const parsed = JSON.parse(txt);
       if (parsed && typeof parsed === "object") {
         await GM.setValue(STORE_KEY, JSON.stringify(parsed));
-        alert("Importado. Recargando para aplicar…");
-        location.reload();
+        UImanager.showToast("Importado con éxito. Recargando...");
+        setTimeout(() => location.reload(), 1500);
       } else {
-        alert("JSON inválido.");
+        UImanager.showToast(
+          "Error: El texto introducido no es un JSON válido."
+        );
       }
     } catch {
-      alert("JSON inválido.");
+      UImanager.showToast("Error: El texto introducido no es un JSON válido.");
     }
   }
 
   async function resetAll() {
-    if (!confirm("¿Borrar todos los episodios marcados?")) return;
+    const confirmed = await UImanager.showConfirm({
+      title: "Confirmar Reinicio",
+      text: "¿Estás seguro de que quieres borrar todos los episodios marcados como vistos? Esta acción no se puede deshacer.",
+      okLabel: "Sí, borrar todo",
+      cancelLabel: "Cancelar",
+    });
+    if (!confirmed) {
+      return;
+    }
     await GM.setValue(STORE_KEY, "{}");
-    alert("Listo. Recargando…");
-    location.reload();
+    UImanager.showToast("Datos reiniciados. Recargando...");
+    setTimeout(() => location.reload(), 1500);
   }
 
   /**
@@ -320,7 +507,9 @@
    * -------------------------------------------------------------
    */
   function ensureTableControlColumn(table) {
-    if (!table || table.getAttribute(TABLE_MARK_ATTR) === "1") return;
+    if (!table || table.getAttribute(TABLE_MARK_ATTR) === "1") {
+      return;
+    }
     const cg = table.querySelector("colgroup");
     if (cg) {
       const col = document.createElement("col");
@@ -337,18 +526,18 @@
   }
 
   function getButtonContainer(item) {
-    if (item.tagName === 'TR') {
-        const table = item.closest("table");
-        ensureTableControlColumn(table);
-        let cell = item.querySelector("td." + CTRL_CELL_CLASS);
-        if (!cell) {
-            cell = document.createElement("td");
-            cell.className = CTRL_CELL_CLASS;
-            item.appendChild(cell);
-        }
-        return cell;
+    if (item.tagName === "TR") {
+      const table = item.closest("table");
+      ensureTableControlColumn(table);
+      let cell = item.querySelector("td." + CTRL_CELL_CLASS);
+      if (!cell) {
+        cell = document.createElement("td");
+        cell.className = CTRL_CELL_CLASS;
+        item.appendChild(cell);
+      }
+      return cell;
     }
-    // Para tarjetas de episodio, el botón se añade directamente al item.
+    // For episode cards, the button is added directly to the item.
     return item;
   }
 
@@ -358,13 +547,15 @@
    * -------------------------------------------------------------
    */
   async function decorateItem(item, store) {
-    if (item.getAttribute(ITEM_SEEN_ATTR) === "1") return; // already processed
+    if (item.getAttribute(ITEM_SEEN_ATTR) === "1") {
+      return;
+    }
 
     const id = computeId(item);
     const seen = !!store[id];
     setItemSeenState(item, seen);
 
-    const isCard = item.matches('.views-row .episode');
+    const isCard = item.matches(".views-row .episode");
     const controlContainer = getButtonContainer(item);
     const btn = makeSeenButton(seen, isCard);
     controlContainer.appendChild(btn);
@@ -389,7 +580,9 @@
             location.href = link.href;
           } else {
             // Middle/CTRL/CMD/Shift or target=_blank: don't block navigation
-            if (!alreadySeen) saveStore(store);
+            if (!alreadySeen) {
+              await saveStore(store);
+            }
             updateButtonState(btn, true);
             setItemSeenState(item, true);
           }
@@ -424,9 +617,11 @@
     // Heuristic: rows within tables that include at least one link
     // AND .episode elements inside .views-row
     return $$("table tr, .views-row .episode", root).filter((item) => {
-        // For TRs, they must not be a table header
-        if (item.tagName === 'TR' && item.closest('thead')) return false;
-        return $("a[href]", item);
+      // For TRs, they must not be a table header
+      if (item.tagName === "TR" && item.closest("thead")) {
+        return false;
+      }
+      return !!$("a[href]", item);
     });
   }
 
@@ -435,7 +630,20 @@
    * Main
    * -------------------------------------------------------------
    */
-  (async function main() {
+  async function main() {
+    // Wait for the body to be available before doing anything that touches it.
+    if (!document.body) {
+      await new Promise((resolve) => {
+        const observer = new MutationObserver(() => {
+          if (document.body) {
+            observer.disconnect();
+            resolve();
+          }
+        });
+        observer.observe(document.documentElement, { childList: true });
+      });
+    }
+
     injectCSS();
 
     // Load and apply highlight preference
@@ -445,36 +653,26 @@
     if (typeof GM_registerMenuCommand === "function") {
       GM_registerMenuCommand(
         (isRowHlOn(prefs) ? "Desactivar" : "Activar") +
-          " color de items 'Visto' (actual: " +
-          (isRowHlOn(prefs) ? "ON" : "OFF") +
-          ")",
+          " color de items 'Visto'",
         async () => {
           const latest = await loadPrefs();
-          const current = isRowHlOn(latest);
-          const next = { ...latest, rowHighlight: !current };
+          const next = { ...latest, rowHighlight: !isRowHlOn(latest) };
           await savePrefs(next);
           applyPrefs(next);
-          alert(
-            "Resalte de items: " +
+          UImanager.showToast(
+            "Resalte de items " +
               (isRowHlOn(next) ? "activado" : "desactivado") +
-              ". El texto del menú se actualizará tras recargar."
+              "."
           );
         }
       );
 
-      GM_registerMenuCommand(
-        "Restablecer preferencias visuales (usar defaults del script)",
-        async () => {
-          await GM.setValue(PREFS_KEY, "{}"); // clear storage
-          const base = {}; // no value => will take DEFAULT_ROW_HL
-          applyPrefs(base);
-          alert(
-            "Preferencias visuales restablecidas. Estado actual: " +
-              (isRowHlOn(base) ? "ON" : "OFF") +
-              ". El texto del menú se actualizará tras recargar."
-          );
-        }
-      );
+      GM_registerMenuCommand("Restablecer preferencias visuales", async () => {
+        await GM.setValue(PREFS_KEY, "{}");
+        const base = {};
+        applyPrefs(base);
+        UImanager.showToast("Preferencias visuales restablecidas.");
+      });
 
       // Commands to export/import/reset seen episodes
       GM_registerMenuCommand("Exportar vistos (JSON)", exportJSON);
@@ -485,11 +683,9 @@
     const store = await loadStore();
 
     try {
-      if (isEpisodePathname(location.pathname)) {
-        if (!store[location.pathname]) {
-          store[location.pathname] = { t: Date.now() };
-          await saveStore(store);
-        }
+      if (isEpisodePathname(location.pathname) && !store[location.pathname]) {
+        store[location.pathname] = { t: Date.now() };
+        await saveStore(store);
       }
     } catch {
       /* noop */
@@ -498,36 +694,35 @@
     document.addEventListener(
       "click",
       async (e) => {
-        const link =
-          e.target && e.target.closest && e.target.closest("a[href]");
-        if (!link) return;
-
+        const link = e.target?.closest("a[href]");
+        if (!link) {
+          return;
+        }
         let url;
         try {
           url = new URL(link.href, location.origin);
         } catch {
           return;
         }
-        if (url.origin !== location.origin) return; // only same origin
-        if (!isEpisodePathname(url.pathname)) return;
+        if (
+          url.origin !== location.origin ||
+          !isEpisodePathname(url.pathname)
+        ) {
+          return;
+        }
 
         const already = !!store[url.pathname];
-
         if (isPrimaryUnmodifiedClick(e, link)) {
-          // Primary click in same tab: ensure persistence before navigating
           e.preventDefault();
           if (!already) {
             store[url.pathname] = { t: Date.now() };
             await saveStore(store);
           }
-          applySeenUIForItemWithLink(link); // reflect in button if it's a decorated item
+          applySeenUIForItemWithLink(link);
           location.href = url.href;
-        } else {
-          // Middle/Ctrl/Cmd/Shift or target=_blank: don't block navigation
-          if (!already) {
-            store[url.pathname] = { t: Date.now() };
-            saveStore(store); // async fire-and-forget
-          }
+        } else if (!already) {
+          store[url.pathname] = { t: Date.now() };
+          await saveStore(store);
           applySeenUIForItemWithLink(link);
         }
       },
@@ -546,10 +741,13 @@
     };
 
     await applyAll();
+    observeMutations(() => applyAll());
+  }
 
-    // Observe changes due to internal navigation or deferred loads
-    observeMutations(() => {
-      applyAll();
-    });
-  })();
+  // Defer main execution until the DOM is interactive or complete
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", main);
+  } else {
+    main();
+  }
 })();
