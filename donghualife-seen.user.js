@@ -30,10 +30,13 @@
   const PREFS_KEY = "us-dhl:prefs:v1";
   const ROW_SEEN_ATTR = "data-us-dhl-decorated";
   const BTN_CLASS = "us-dhl-seen-btn";
+  const EPISODE_BTN_CLASS = "us-dhl-episode-btn";
   const ROW_SEEN_CLASS = "us-dhl-seen-row";
+  const EPISODE_SEEN_CLASS = "us-dhl-episode-seen";
   const ROOT_HL_CLASS = "us-dhl-rowhl-on";
   const CTRL_CELL_CLASS = "us-dhl-ctrlcol";
   const TABLE_MARK_ATTR = "data-us-dhl-ctrlcol";
+  const EPISODE_SEEN_ATTR = "data-us-dhl-episode-decorated";
 
   // Default row highlight (true = ON por defecto, false = OFF por defecto)
   const DEFAULT_ROW_HL = false; // cámbialo a false si quieres opt-in por defecto
@@ -109,6 +112,62 @@
     .${ROOT_HL_CLASS} .${ROW_SEEN_CLASS} .${BTN_CLASS}[aria-pressed="true"]{
       filter: none;
     }
+
+    /* Estilos para botón redondo de episodios */
+    .${EPISODE_BTN_CLASS}{
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(16,185,129,.8);
+      color: white;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all .15s ease;
+      z-index: 10;
+      box-shadow: 0 2px 4px rgba(0,0,0,.3);
+    }
+
+    .${EPISODE_BTN_CLASS}:hover{
+      transform: scale(1.1);
+      box-shadow: 0 4px 8px rgba(0,0,0,.4);
+    }
+
+    .${EPISODE_BTN_CLASS}:focus{
+      outline: 2px solid rgba(255,255,255,.8);
+      outline-offset: 2px;
+    }
+
+    .${EPISODE_BTN_CLASS}[aria-pressed="false"]{
+      background: rgba(108, 117, 125, .8);
+    }
+
+    .${EPISODE_BTN_CLASS}[aria-pressed="false"]:hover{
+      background: rgba(16,185,129,.8);
+    }
+
+    /* Contenedor de episodio con posición relativa para el botón absoluto */
+    .views-row .episode{
+      position: relative;
+    }
+
+    /* Estilo para episodios marcados como vistos */
+    .${EPISODE_SEEN_CLASS}{
+      opacity: 0.7;
+      transition: opacity .15s ease;
+    }
+
+    .${EPISODE_SEEN_CLASS}:hover{
+      opacity: 1;
+    }
   `;
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -173,6 +232,15 @@
     return "row:" + txt.slice(0, 160);
   }
 
+  function computeEpisodeIdFromElement(element) {
+    // Prefer the first absolute pathname to be stable across navigations
+    const a = $("a[href]", element);
+    if (a) return new URL(a.href, location.origin).pathname;
+    // Fallback: compact hash-like key from element text
+    const txt = (element.textContent || "").replace(/\s+/g, " ").trim();
+    return "episode:" + txt.slice(0, 160);
+  }
+
   function makeSeenButton(isSeen) {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -186,11 +254,42 @@
     return btn;
   }
 
+  function makeEpisodeSeenButton(isSeen) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = EPISODE_BTN_CLASS;
+    btn.title = isSeen
+      ? "Marcado como visto. Click para desmarcar."
+      : "No visto. Click para marcar.";
+    btn.textContent = isSeen ? "✔️" : "⭕";
+    btn.setAttribute("aria-pressed", String(!!isSeen));
+    btn.setAttribute("aria-label", "Alternar episodio visto");
+    
+    // Add hover behavior to show unmark indication
+    if (isSeen) {
+      btn.addEventListener("mouseenter", () => {
+        btn.textContent = "❌";
+      });
+      btn.addEventListener("mouseleave", () => {
+        btn.textContent = "✔️";
+      });
+    }
+    
+    return btn;
+  }
+
   // Row-level UI helper: toggle seen styling and expose state
   function setRowSeenState(tr, seen) {
     if (!tr) return;
     tr.classList.toggle(ROW_SEEN_CLASS, !!seen);
     tr.setAttribute("data-us-dhl-seen-state", seen ? "1" : "0");
+  }
+
+  // Episode-level UI helper: toggle seen styling and expose state
+  function setEpisodeSeenState(episode, seen) {
+    if (!episode) return;
+    episode.classList.toggle(EPISODE_SEEN_CLASS, !!seen);
+    episode.setAttribute("data-us-dhl-episode-seen", seen ? "1" : "0");
   }
 
   // Simple debounce to prevent thrashing on heavy DOM updates
@@ -232,13 +331,34 @@
   // Reflejar el estado del botón en una fila de temporada (si existe)
   function applySeenUIInRowForLink(link) {
     const tr = link.closest("tr");
-    if (!tr) return;
-    const btn = tr.querySelector("." + BTN_CLASS);
-    if (!btn) return;
-    btn.textContent = "Visto";
-    btn.title = "Marcado como visto. Click para desmarcar.";
-    btn.setAttribute("aria-pressed", "true");
-    setRowSeenState(tr, true);
+    if (tr) {
+      const btn = tr.querySelector("." + BTN_CLASS);
+      if (btn) {
+        btn.textContent = "Visto";
+        btn.title = "Marcado como visto. Click para desmarcar.";
+        btn.setAttribute("aria-pressed", "true");
+        setRowSeenState(tr, true);
+      }
+    }
+
+    // Also check for episode elements
+    const episode = link.closest(".episode");
+    if (episode && episode.closest(".views-row")) {
+      const btn = episode.querySelector("." + EPISODE_BTN_CLASS);
+      if (btn) {
+        btn.textContent = "✔️";
+        btn.title = "Marcado como visto. Click para desmarcar.";
+        btn.setAttribute("aria-pressed", "true");
+        setEpisodeSeenState(episode, true);
+        // Add hover behavior
+        btn.addEventListener("mouseenter", () => {
+          btn.textContent = "❌";
+        });
+        btn.addEventListener("mouseleave", () => {
+          btn.textContent = "✔️";
+        });
+      }
+    }
   }
 
   function observeMutations(callback) {
@@ -316,7 +436,133 @@
 
   /**
    * -------------------------------------------------------------
-   * Row decoration
+   * Episode decoration (for .views-row .episode elements)
+   * -------------------------------------------------------------
+   */
+  async function decorateEpisodeElement(episode, store) {
+    if (episode.getAttribute(EPISODE_SEEN_ATTR) === "1") return; // already processed
+
+    const id = computeEpisodeIdFromElement(episode);
+    const seen = !!store[id];
+    setEpisodeSeenState(episode, seen);
+
+    const btn = makeEpisodeSeenButton(seen);
+
+    episode.appendChild(btn);
+
+    // Auto-mark al hacer clic en el enlace del episodio
+    const link = $("a[href]", episode);
+    if (link) {
+      link.addEventListener(
+        "click",
+        async (e) => {
+          const alreadySeen = !!store[id];
+          // Actualiza UI y storage (idempotente)
+          const applySeenUI = () => {
+            btn.textContent = "✔️";
+            btn.title = "Marcado como visto. Click para desmarcar.";
+            btn.setAttribute("aria-pressed", "true");
+            setEpisodeSeenState(episode, true);
+            // Re-add hover behavior for seen state
+            btn.addEventListener("mouseenter", () => {
+              btn.textContent = "❌";
+            });
+            btn.addEventListener("mouseleave", () => {
+              btn.textContent = "✔️";
+            });
+          };
+
+          if (!alreadySeen) {
+            store[id] = { t: Date.now() };
+          }
+
+          if (isPrimaryUnmodifiedClick(e, link)) {
+            // Clic primario en misma pestaña: garantizamos persistencia antes de navegar
+            e.preventDefault();
+            await saveStore(store);
+            applySeenUI();
+            location.href = link.href;
+          } else {
+            // Middle/CTRL/CMD/Shift o target=_blank: no bloqueamos la navegación
+            if (!alreadySeen) saveStore(store);
+            applySeenUI();
+          }
+        },
+        { passive: false }
+      );
+    }
+
+    btn.addEventListener(
+      "click",
+      async (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        const nowSeen = !store[id];
+        if (nowSeen) {
+          store[id] = { t: Date.now() };
+        } else {
+          delete store[id];
+        }
+        await saveStore(store);
+
+        // Update UI
+        btn.textContent = nowSeen ? "✔️" : "⭕";
+        btn.title = nowSeen
+          ? "Marcado como visto. Click para desmarcar."
+          : "No visto. Click para marcar.";
+        btn.setAttribute("aria-pressed", String(nowSeen));
+        setEpisodeSeenState(episode, nowSeen);
+
+        // Remove old event listeners and add new ones based on state
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        
+        if (nowSeen) {
+          newBtn.addEventListener("mouseenter", () => {
+            newBtn.textContent = "❌";
+          });
+          newBtn.addEventListener("mouseleave", () => {
+            newBtn.textContent = "✔️";
+          });
+          newBtn.addEventListener("click", async (newEv) => {
+            newEv.stopPropagation();
+            newEv.preventDefault();
+            delete store[id];
+            await saveStore(store);
+            newBtn.textContent = "⭕";
+            newBtn.title = "No visto. Click para marcar.";
+            newBtn.setAttribute("aria-pressed", "false");
+            setEpisodeSeenState(episode, false);
+          });
+        } else {
+          newBtn.addEventListener("click", async (newEv) => {
+            newEv.stopPropagation();
+            newEv.preventDefault();
+            store[id] = { t: Date.now() };
+            await saveStore(store);
+            newBtn.textContent = "✔️";
+            newBtn.title = "Marcado como visto. Click para desmarcar.";
+            newBtn.setAttribute("aria-pressed", "true");
+            setEpisodeSeenState(episode, true);
+            // Add hover behavior for seen state
+            newBtn.addEventListener("mouseenter", () => {
+              newBtn.textContent = "❌";
+            });
+            newBtn.addEventListener("mouseleave", () => {
+              newBtn.textContent = "✔️";
+            });
+          });
+        }
+      },
+      { passive: false }
+    );
+
+    episode.setAttribute(EPISODE_SEEN_ATTR, "1");
+  }
+
+  /**
+   * -------------------------------------------------------------
+   * Row decoration (for table rows)
    * -------------------------------------------------------------
    */
   async function decorateTableRow(tr, store) {
@@ -403,6 +649,11 @@
   function scanRows(root = document) {
     // Heuristic: rows within tables that include at least one link
     return $$("table tr", root).filter((tr) => $("a[href]", tr));
+  }
+
+  function scanEpisodes(root = document) {
+    // Look for .episode elements inside .views-row
+    return $$(".views-row .episode", root).filter((episode) => $("a[href]", episode));
   }
 
   /**
@@ -510,10 +761,21 @@
     );
 
     const applyAll = async (root = document) => {
+      // Handle table rows
       const rows = scanRows(root);
       for (const tr of rows) {
         try {
           await decorateTableRow(tr, store);
+        } catch {
+          /* no-op for robustness */
+        }
+      }
+
+      // Handle episode elements
+      const episodes = scanEpisodes(root);
+      for (const episode of episodes) {
+        try {
+          await decorateEpisodeElement(episode, store);
         } catch {
           /* no-op for robustness */
         }
