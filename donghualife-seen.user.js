@@ -9,7 +9,7 @@
 // @run-at       document-idle
 // @grant        GM.getValue
 // @grant        GM.setValue
-// @grant        GM_registerMenuCommand
+// @grant        GM.registerMenuCommand
 // @license      MIT
 // @noframes
 // @downloadURL  https://raw.githubusercontent.com/Aesthermortis/donghualife-seen-userscript/main/donghualife-seen.user.js
@@ -260,16 +260,16 @@
     showPrompt({ title, text, okLabel = "Aceptar", cancelLabel = "Cancelar" }) {
       return new Promise((resolve) => {
         const modalHTML = `
-                <div class="us-dhl-modal-header">${title}</div>
-                <div class="us-dhl-modal-body">
-                    <p>${text}</p>
-                    <textarea></textarea>
-                </div>
-                <div class="us-dhl-modal-footer">
-                    <button class="us-dhl-modal-btn secondary">${cancelLabel}</button>
-                    <button class="us-dhl-modal-btn primary">${okLabel}</button>
-                </div>
-            `;
+          <div class="us-dhl-modal-header">${title}</div>
+          <div class="us-dhl-modal-body">
+              <p>${text}</p>
+              <textarea></textarea>
+          </div>
+          <div class="us-dhl-modal-footer">
+              <button class="us-dhl-modal-btn secondary">${cancelLabel}</button>
+              <button class="us-dhl-modal-btn primary">${okLabel}</button>
+          </div>
+        `;
         const overlay = this._createModal(modalHTML);
         const modal = $(".us-dhl-modal", overlay);
         const input = $("textarea", overlay);
@@ -289,15 +289,15 @@
     },
     showExport({ title, text, data }) {
       const modalHTML = `
-            <div class="us-dhl-modal-header">${title}</div>
-            <div class="us-dhl-modal-body">
-                <p>${text}</p>
-                <textarea readonly></textarea>
-            </div>
-            <div class="us-dhl-modal-footer">
-                <button class="us-dhl-modal-btn primary">Cerrar</button>
-            </div>
-        `;
+        <div class="us-dhl-modal-header">${title}</div>
+        <div class="us-dhl-modal-body">
+            <p>${text}</p>
+            <textarea readonly></textarea>
+        </div>
+        <div class="us-dhl-modal-footer">
+            <button class="us-dhl-modal-btn primary">Cerrar</button>
+        </div>
+      `;
       const overlay = this._createModal(modalHTML);
       const modal = $(".us-dhl-modal", overlay);
       const textarea = $("textarea", overlay);
@@ -650,8 +650,8 @@
     const prefs = await loadPrefs();
     applyPrefs(prefs);
 
-    if (typeof GM_registerMenuCommand === "function") {
-      GM_registerMenuCommand(
+    if (typeof GM.registerMenuCommand === "function") {
+      GM.registerMenuCommand(
         (isRowHlOn(prefs) ? "Desactivar" : "Activar") +
           " color de items 'Visto'",
         async () => {
@@ -667,7 +667,7 @@
         }
       );
 
-      GM_registerMenuCommand("Restablecer preferencias visuales", async () => {
+      GM.registerMenuCommand("Restablecer preferencias visuales", async () => {
         await GM.setValue(PREFS_KEY, "{}");
         const base = {};
         applyPrefs(base);
@@ -675,9 +675,9 @@
       });
 
       // Commands to export/import/reset seen episodes
-      GM_registerMenuCommand("Exportar vistos (JSON)", exportJSON);
-      GM_registerMenuCommand("Importar vistos (JSON)", importJSON);
-      GM_registerMenuCommand("Reiniciar marcados", resetAll);
+      GM.registerMenuCommand("Exportar vistos (JSON)", exportJSON);
+      GM.registerMenuCommand("Importar vistos (JSON)", importJSON);
+      GM.registerMenuCommand("Reiniciar marcados", resetAll);
     }
 
     const store = await loadStore();
