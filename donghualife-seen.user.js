@@ -265,17 +265,31 @@
     btn.setAttribute("aria-pressed", String(!!isSeen));
     btn.setAttribute("aria-label", "Alternar episodio visto");
     
-    // Add hover behavior to show unmark indication
+    return btn;
+  }
+
+  function updateEpisodeButtonState(btn, isSeen) {
+    btn.textContent = isSeen ? "✔️" : "⭕";
+    btn.title = isSeen
+      ? "Marcado como visto. Click para desmarcar."
+      : "No visto. Click para marcar.";
+    btn.setAttribute("aria-pressed", String(!!isSeen));
+    
+    // Remove any existing hover listeners
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+    
+    // Add hover behavior for seen episodes
     if (isSeen) {
-      btn.addEventListener("mouseenter", () => {
-        btn.textContent = "❌";
+      newBtn.addEventListener("mouseenter", () => {
+        newBtn.textContent = "❌";
       });
-      btn.addEventListener("mouseleave", () => {
-        btn.textContent = "✔️";
+      newBtn.addEventListener("mouseleave", () => {
+        newBtn.textContent = "✔️";
       });
     }
     
-    return btn;
+    return newBtn;
   }
 
   // Row-level UI helper: toggle seen styling and expose state
@@ -346,17 +360,8 @@
     if (episode && episode.closest(".views-row")) {
       const btn = episode.querySelector("." + EPISODE_BTN_CLASS);
       if (btn) {
-        btn.textContent = "✔️";
-        btn.title = "Marcado como visto. Click para desmarcar.";
-        btn.setAttribute("aria-pressed", "true");
+        const updatedBtn = updateEpisodeButtonState(btn, true);
         setEpisodeSeenState(episode, true);
-        // Add hover behavior
-        btn.addEventListener("mouseenter", () => {
-          btn.textContent = "❌";
-        });
-        btn.addEventListener("mouseleave", () => {
-          btn.textContent = "✔️";
-        });
       }
     }
   }
@@ -446,7 +451,10 @@
     const seen = !!store[id];
     setEpisodeSeenState(episode, seen);
 
-    const btn = makeEpisodeSeenButton(seen);
+    let btn = makeEpisodeSeenButton(seen);
+    if (seen) {
+      btn = updateEpisodeButtonState(btn, true);
+    }
 
     episode.appendChild(btn);
 
@@ -457,21 +465,7 @@
         "click",
         async (e) => {
           const alreadySeen = !!store[id];
-          // Actualiza UI y storage (idempotente)
-          const applySeenUI = () => {
-            btn.textContent = "✔️";
-            btn.title = "Marcado como visto. Click para desmarcar.";
-            btn.setAttribute("aria-pressed", "true");
-            setEpisodeSeenState(episode, true);
-            // Re-add hover behavior for seen state
-            btn.addEventListener("mouseenter", () => {
-              btn.textContent = "❌";
-            });
-            btn.addEventListener("mouseleave", () => {
-              btn.textContent = "✔️";
-            });
-          };
-
+          
           if (!alreadySeen) {
             store[id] = { t: Date.now() };
           }
@@ -480,82 +474,41 @@
             // Clic primario en misma pestaña: garantizamos persistencia antes de navegar
             e.preventDefault();
             await saveStore(store);
-            applySeenUI();
+            btn = updateEpisodeButtonState(btn, true);
+            setEpisodeSeenState(episode, true);
             location.href = link.href;
           } else {
             // Middle/CTRL/CMD/Shift o target=_blank: no bloqueamos la navegación
             if (!alreadySeen) saveStore(store);
-            applySeenUI();
+            btn = updateEpisodeButtonState(btn, true);
+            setEpisodeSeenState(episode, true);
           }
         },
         { passive: false }
       );
     }
 
-    btn.addEventListener(
-      "click",
-      async (ev) => {
-        ev.stopPropagation();
-        ev.preventDefault();
-        const nowSeen = !store[id];
-        if (nowSeen) {
-          store[id] = { t: Date.now() };
-        } else {
-          delete store[id];
-        }
-        await saveStore(store);
+    // Main button click handler
+    const handleButtonClick = async (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      const nowSeen = !store[id];
+      
+      if (nowSeen) {
+        store[id] = { t: Date.now() };
+      } else {
+        delete store[id];
+      }
+      await saveStore(store);
 
-        // Update UI
-        btn.textContent = nowSeen ? "✔️" : "⭕";
-        btn.title = nowSeen
-          ? "Marcado como visto. Click para desmarcar."
-          : "No visto. Click para marcar.";
-        btn.setAttribute("aria-pressed", String(nowSeen));
-        setEpisodeSeenState(episode, nowSeen);
+      btn = updateEpisodeButtonState(btn, nowSeen);
+      setEpisodeSeenState(episode, nowSeen);
+      
+      // Re-attach the click handler to the new button
+      btn.addEventListener("click", handleButtonClick, { passive: false });
+    };
 
-        // Remove old event listeners and add new ones based on state
-        const newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-        
-        if (nowSeen) {
-          newBtn.addEventListener("mouseenter", () => {
-            newBtn.textContent = "❌";
-          });
-          newBtn.addEventListener("mouseleave", () => {
-            newBtn.textContent = "✔️";
-          });
-          newBtn.addEventListener("click", async (newEv) => {
-            newEv.stopPropagation();
-            newEv.preventDefault();
-            delete store[id];
-            await saveStore(store);
-            newBtn.textContent = "⭕";
-            newBtn.title = "No visto. Click para marcar.";
-            newBtn.setAttribute("aria-pressed", "false");
-            setEpisodeSeenState(episode, false);
-          });
-        } else {
-          newBtn.addEventListener("click", async (newEv) => {
-            newEv.stopPropagation();
-            newEv.preventDefault();
-            store[id] = { t: Date.now() };
-            await saveStore(store);
-            newBtn.textContent = "✔️";
-            newBtn.title = "Marcado como visto. Click para desmarcar.";
-            newBtn.setAttribute("aria-pressed", "true");
-            setEpisodeSeenState(episode, true);
-            // Add hover behavior for seen state
-            newBtn.addEventListener("mouseenter", () => {
-              newBtn.textContent = "❌";
-            });
-            newBtn.addEventListener("mouseleave", () => {
-              newBtn.textContent = "✔️";
-            });
-          });
-        }
-      },
-      { passive: false }
-    );
+    btn.addEventListener("click", handleButtonClick, { passive: false });
 
     episode.setAttribute(EPISODE_SEEN_ATTR, "1");
   }
