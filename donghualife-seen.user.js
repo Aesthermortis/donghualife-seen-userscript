@@ -2,7 +2,7 @@
 // @name         DonghuaLife – Mark Watched Episodes (✅)
 // @namespace    us_dhl_seen
 // @version      1.0.2
-// @description  Adds a button to mark watched episodes in season tables on donghualife.com.
+// @description  Adds a button to mark watched episodes in season tables and episode cards on donghualife.com.
 // @author       Aesthermortis
 // @match        *://donghualife.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=donghualife.com
@@ -12,7 +12,7 @@
 // @grant        GM_registerMenuCommand
 // @license      MIT
 // @noframes
-// @downloadURL  https://raw.githubusercontent.com/Aesthermortis/donghualife-seen-userscript/refs/tags/v1.0.2/donghualife-seen.user.js
+// @downloadURL  https://raw.githubusercontent.com/Aesthermortis/donghualife-seen-userscript/main/donghualife-seen.user.js
 // @updateURL    https://raw.githubusercontent.com/Aesthermortis/donghualife-seen-userscript/main/donghualife-seen.user.js
 // @supportURL   https://github.com/Aesthermortis/donghualife-seen-userscript/issues
 // @homepageURL  https://github.com/Aesthermortis/donghualife-seen-userscript
@@ -28,15 +28,12 @@
    */
   const STORE_KEY = "seenEpisodes:v1";
   const PREFS_KEY = "us-dhl:prefs:v1";
-  const ROW_SEEN_ATTR = "data-us-dhl-decorated";
+  const ITEM_SEEN_ATTR = "data-us-dhl-decorated";
   const BTN_CLASS = "us-dhl-seen-btn";
-  const EPISODE_BTN_CLASS = "us-dhl-episode-btn";
-  const ROW_SEEN_CLASS = "us-dhl-seen-row";
-  const EPISODE_SEEN_CLASS = "us-dhl-episode-seen";
+  const ITEM_SEEN_CLASS = "us-dhl-item-seen";
   const ROOT_HL_CLASS = "us-dhl-rowhl-on";
   const CTRL_CELL_CLASS = "us-dhl-ctrlcol";
   const TABLE_MARK_ATTR = "data-us-dhl-ctrlcol";
-  const EPISODE_SEEN_ATTR = "data-us-dhl-episode-decorated";
 
   // Default row highlight (true = ON por defecto, false = OFF por defecto)
   const DEFAULT_ROW_HL = false; // cámbialo a false si quieres opt-in por defecto
@@ -54,6 +51,7 @@
       background:rgba(255,255,255,.06);
       color:#f5f7fa;
       transition:filter .15s ease, background .15s ease, border-color .15s ease;
+      white-space: nowrap;
     }
 
     .${BTN_CLASS}:hover{ filter:brightness(1.05); }
@@ -73,100 +71,50 @@
       text-align:right;
     }
 
-    /* Estilo de fila marcada (solo si el highlight global está ON) */
-    .${ROOT_HL_CLASS} .${ROW_SEEN_CLASS}{
+    /* Estilo de item marcado (solo si el highlight global está ON) */
+    .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS}{
       background: rgba(16,185,129,.06);
       transition: background .15s ease;
     }
 
     /* Intensidad al hover (solo si el highlight global está ON) */
-    .${ROOT_HL_CLASS} .${ROW_SEEN_CLASS}:hover{
+    .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS}:hover{
       background: rgba(16,185,129,.12);
     }
 
-    /* A11y: también resalta cuando la fila contiene foco (navegación con teclado) */
-    .${ROOT_HL_CLASS} .${ROW_SEEN_CLASS}:focus-within{
+    /* A11y: también resalta cuando el item contiene foco (navegación con teclado) */
+    .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS}:focus-within{
       background: rgba(16,185,129,.12);
     }
 
     /* Evitar “parpadeo” en móvil/touch: aplica hover solo en puntero fino */
     @media (hover: hover) and (pointer: fine){
-      .us-dhl-rowhl-on .us-dhl-seen-row{
+      .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS}{
         transition: background .15s ease;
       }
     }
 
     /* Respeta “reducir movimiento” del sistema */
     @media (prefers-reduced-motion: reduce){
-      .us-dhl-rowhl-on .us-dhl-seen-row{
+      .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS}{
         transition: none;
       }
     }
 
-    /* Enlaces en filas marcadas: opacidad ligeramente reducida (solo si el highlight global está ON) */
-    .${ROOT_HL_CLASS} .${ROW_SEEN_CLASS} a{
+    /* Enlaces en items marcados: opacidad ligeramente reducida (solo si el highlight global está ON) */
+    .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS} a{
       opacity: .95;
     }
 
-    /* Botón en filas marcadas: filtro de brillo reducido (solo si el highlight global está ON) */
-    .${ROOT_HL_CLASS} .${ROW_SEEN_CLASS} .${BTN_CLASS}[aria-pressed="true"]{
+    /* Botón en items marcados: filtro de brillo reducido (solo si el highlight global está ON) */
+    .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS} .${BTN_CLASS}[aria-pressed="true"]{
       filter: none;
     }
 
-    /* Estilos para botón redondo de episodios */
-    .${EPISODE_BTN_CLASS}{
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      width: 32px;
-      height: 32px;
-      border: none;
-      border-radius: 50%;
-      background: rgba(16,185,129,.8);
-      color: white;
-      font-size: 16px;
-      line-height: 1;
-      cursor: pointer;
-      user-select: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all .15s ease;
-      z-index: 10;
-      box-shadow: 0 2px 4px rgba(0,0,0,.3);
-    }
-
-    .${EPISODE_BTN_CLASS}:hover{
-      transform: scale(1.1);
-      box-shadow: 0 4px 8px rgba(0,0,0,.4);
-    }
-
-    .${EPISODE_BTN_CLASS}:focus{
-      outline: 2px solid rgba(255,255,255,.8);
-      outline-offset: 2px;
-    }
-
-    .${EPISODE_BTN_CLASS}[aria-pressed="false"]{
-      background: rgba(108, 117, 125, .8);
-    }
-
-    .${EPISODE_BTN_CLASS}[aria-pressed="false"]:hover{
-      background: rgba(16,185,129,.8);
-    }
-
-    /* Contenedor de episodio con posición relativa para el botón absoluto */
-    .views-row .episode{
-      position: relative;
-    }
-
-    /* Estilo para episodios marcados como vistos */
-    .${EPISODE_SEEN_CLASS}{
-      opacity: 0.7;
-      transition: opacity .15s ease;
-    }
-
-    .${EPISODE_SEEN_CLASS}:hover{
-      opacity: 1;
+    /* Contenedor del botón para tarjetas de episodio */
+    .us-dhl-card-ctrl {
+      margin-top: 8px;
+      text-align: right;
     }
   `;
 
@@ -223,94 +171,38 @@
     document.documentElement.classList.toggle(ROOT_HL_CLASS, on);
   }
 
-  function computeEpisodeId(tr) {
-    // Prefer the first absolute pathname to be stable across navigations
-    const a = $("a[href]", tr);
-    if (a) return new URL(a.href, location.origin).pathname;
-    // Fallback: compact hash-like key from row text
-    const txt = (tr.textContent || "").replace(/\s+/g, " ").trim();
-    return "row:" + txt.slice(0, 160);
-  }
-
-  function computeEpisodeIdFromElement(element) {
+  function computeId(element) {
     // Prefer the first absolute pathname to be stable across navigations
     const a = $("a[href]", element);
     if (a) return new URL(a.href, location.origin).pathname;
     // Fallback: compact hash-like key from element text
     const txt = (element.textContent || "").replace(/\s+/g, " ").trim();
-    return "episode:" + txt.slice(0, 160);
+    const prefix = element.tagName === 'TR' ? 'row:' : 'item:';
+    return prefix + txt.slice(0, 160);
   }
 
   function makeSeenButton(isSeen) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = BTN_CLASS;
-    btn.title = isSeen
-      ? "Marcado como visto. Click para desmarcar."
-      : "No visto. Click para marcar.";
+    updateButtonState(btn, isSeen);
+    btn.setAttribute("aria-label", "Alternar episodio visto");
+    return btn;
+  }
+
+  function updateButtonState(btn, isSeen) {
     btn.textContent = isSeen ? "Visto" : "Marcar";
-    btn.setAttribute("aria-pressed", String(!!isSeen));
-    btn.setAttribute("aria-label", "Alternar episodio visto");
-    return btn;
-  }
-
-  function makeEpisodeSeenButton(isSeen) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = EPISODE_BTN_CLASS;
-    btn.title = isSeen
-      ? "Marcado como visto. Click para desmarcar."
-      : "No visto. Click para marcar.";
-    btn.textContent = isSeen ? "✔️" : "⭕";
-    btn.setAttribute("aria-pressed", String(!!isSeen));
-    btn.setAttribute("aria-label", "Alternar episodio visto");
-
-    return btn;
-  }
-
-  function updateEpisodeButtonState(btn, isSeen) {
-    btn.textContent = isSeen ? "✔️" : "⭕";
     btn.title = isSeen
       ? "Marcado como visto. Click para desmarcar."
       : "No visto. Click para marcar.";
     btn.setAttribute("aria-pressed", String(!!isSeen));
-
-    // Remove any existing hover listeners
-    const newBtn = btn.cloneNode(true);
-    btn.parentNode.replaceChild(newBtn, btn);
-
-    // Add hover behavior for seen episodes
-    if (isSeen) {
-      newBtn.addEventListener("mouseenter", () => {
-        newBtn.textContent = "❌";
-      });
-      newBtn.addEventListener("mouseleave", () => {
-        newBtn.textContent = "✔️";
-      });
-    } else {
-      newBtn.addEventListener("mouseenter", () => {
-        newBtn.textContent = "✔️";
-      });
-      newBtn.addEventListener("mouseleave", () => {
-        newBtn.textContent = "⭕";
-      });
-    }
-
-    return newBtn;
   }
 
-  // Row-level UI helper: toggle seen styling and expose state
-  function setRowSeenState(tr, seen) {
-    if (!tr) return;
-    tr.classList.toggle(ROW_SEEN_CLASS, !!seen);
-    tr.setAttribute("data-us-dhl-seen-state", seen ? "1" : "0");
-  }
-
-  // Episode-level UI helper: toggle seen styling and expose state
-  function setEpisodeSeenState(episode, seen) {
-    if (!episode) return;
-    episode.classList.toggle(EPISODE_SEEN_CLASS, !!seen);
-    episode.setAttribute("data-us-dhl-episode-seen", seen ? "1" : "0");
+  // UI helper: toggle seen styling and expose state
+  function setItemSeenState(item, seen) {
+    if (!item) return;
+    item.classList.toggle(ITEM_SEEN_CLASS, !!seen);
+    item.setAttribute("data-us-dhl-seen-state", seen ? "1" : "0");
   }
 
   // Simple debounce to prevent thrashing on heavy DOM updates
@@ -349,26 +241,14 @@
     );
   }
 
-  // Reflejar el estado del botón en una fila de temporada (si existe)
-  function applySeenUIInRowForLink(link) {
-    const tr = link.closest("tr");
-    if (tr) {
-      const btn = tr.querySelector("." + BTN_CLASS);
+  // Reflejar el estado del botón en un item (fila o tarjeta)
+  function applySeenUIForItemWithLink(link) {
+    const item = link.closest("tr, .views-row .episode");
+    if (item) {
+      const btn = item.querySelector("." + BTN_CLASS);
       if (btn) {
-        btn.textContent = "Visto";
-        btn.title = "Marcado como visto. Click para desmarcar.";
-        btn.setAttribute("aria-pressed", "true");
-        setRowSeenState(tr, true);
-      }
-    }
-
-    // Also check for episode elements
-    const episode = link.closest(".episode");
-    if (episode && episode.closest(".views-row")) {
-      const btn = episode.querySelector("." + EPISODE_BTN_CLASS);
-      if (btn) {
-        const updatedBtn = updateEpisodeButtonState(btn, true);
-        setEpisodeSeenState(episode, true);
+        updateButtonState(btn, true);
+        setItemSeenState(item, true);
       }
     }
   }
@@ -419,7 +299,7 @@
 
   /**
    * -------------------------------------------------------------
-   * Layout helpers: stable control column
+   * Layout helpers
    * -------------------------------------------------------------
    */
   function ensureTableControlColumn(table) {
@@ -434,163 +314,67 @@
     table.setAttribute(TABLE_MARK_ATTR, "1");
   }
 
-  function ensureControlCellForRow(tr) {
-    let cell = tr.querySelector(
-      "td." + CTRL_CELL_CLASS + ", th." + CTRL_CELL_CLASS
-    );
-    if (!cell) {
-      cell = document.createElement("td");
-      cell.className = CTRL_CELL_CLASS;
-      tr.appendChild(cell);
+  function getButtonContainer(item) {
+    if (item.tagName === 'TR') {
+        const table = item.closest("table");
+        ensureTableControlColumn(table);
+        let cell = item.querySelector("td." + CTRL_CELL_CLASS);
+        if (!cell) {
+            cell = document.createElement("td");
+            cell.className = CTRL_CELL_CLASS;
+            item.appendChild(cell);
+        }
+        return cell;
+    } else { // Episode card
+        let container = item.querySelector('.us-dhl-card-ctrl');
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'us-dhl-card-ctrl';
+            item.appendChild(container);
+        }
+        return container;
     }
-    return cell;
   }
 
   /**
    * -------------------------------------------------------------
-   * Episode decoration (for .views-row .episode elements)
+   * Item decoration (for tables rows and episode cards)
    * -------------------------------------------------------------
    */
-  async function decorateEpisodeElement(episode, store) {
-    if (episode.getAttribute(EPISODE_SEEN_ATTR) === "1") return; // already processed
+  async function decorateItem(item, store) {
+    if (item.getAttribute(ITEM_SEEN_ATTR) === "1") return; // already processed
 
-    const id = computeEpisodeIdFromElement(episode);
-
-    // Check both store and existing element state to determine if episode is seen
-    const storeHasSeen = !!store[id];
-    const elementHasSeen = episode.classList.contains(EPISODE_SEEN_CLASS) && 
-      episode.getAttribute("data-us-dhl-episode-seen") === "1";
-    const seen = storeHasSeen || elementHasSeen;
-
-    // If element has seen state but store doesn't, sync store with element state
-    if (elementHasSeen && !storeHasSeen) {
-      store[id] = { t: Date.now() };
-      await saveStore(store);
-    }
-
-    setEpisodeSeenState(episode, seen);
-
-    // Check if episode already has a button (in case of partial decoration)
-    let existingBtn = episode.querySelector("." + EPISODE_BTN_CLASS);
-    if (existingBtn) {
-      existingBtn.remove();
-    }
-
-    let btn = makeEpisodeSeenButton(seen);
-    episode.appendChild(btn);
-
-    // Update button state for seen episodes (must be done after adding to DOM)
-    btn = updateEpisodeButtonState(btn, seen);
-
-    // Auto-mark al hacer clic en el enlace del episodio
-    const link = $("a[href]", episode);
-    if (link) {
-      link.addEventListener(
-        "click",
-        async (e) => {
-          const alreadySeen = !!store[id];
-
-          if (!alreadySeen) {
-            store[id] = { t: Date.now() };
-          }
-
-          if (isPrimaryUnmodifiedClick(e, link)) {
-            // Clic primario en misma pestaña: garantizamos persistencia antes de navegar
-            e.preventDefault();
-            await saveStore(store);
-            btn = updateEpisodeButtonState(btn, true);
-            setEpisodeSeenState(episode, true);
-            location.href = link.href;
-          } else {
-            // Middle/CTRL/CMD/Shift o target=_blank: no bloqueamos la navegación
-            if (!alreadySeen) saveStore(store);
-            btn = updateEpisodeButtonState(btn, true);
-            setEpisodeSeenState(episode, true);
-          }
-        },
-        { passive: false }
-      );
-    }
-
-    // Main button click handler
-    const handleButtonClick = async (ev) => {
-      ev.stopPropagation();
-      ev.preventDefault();
-      const nowSeen = !store[id];
-
-      if (nowSeen) {
-        store[id] = { t: Date.now() };
-      } else {
-        delete store[id];
-      }
-      await saveStore(store);
-
-      btn = updateEpisodeButtonState(btn, nowSeen);
-      setEpisodeSeenState(episode, nowSeen);
-
-      // Re-attach the click handler to the new button
-      btn.addEventListener("click", handleButtonClick, { passive: false });
-    };
-
-    btn.addEventListener("click", handleButtonClick, { passive: false });
-
-    episode.setAttribute(EPISODE_SEEN_ATTR, "1");
-  }
-
-  /**
-   * -------------------------------------------------------------
-   * Row decoration (for table rows)
-   * -------------------------------------------------------------
-   */
-  async function decorateTableRow(tr, store) {
-    if (tr.getAttribute(ROW_SEEN_ATTR) === "1") return; // already processed
-
-    const id = computeEpisodeId(tr);
+    const id = computeId(item);
     const seen = !!store[id];
-    setRowSeenState(tr, seen);
+    setItemSeenState(item, seen);
 
-    // Prepare stable control column
-    const table = tr.closest("table");
-    ensureTableControlColumn(table);
-    const controlCell = ensureControlCellForRow(tr);
-
+    const controlContainer = getButtonContainer(item);
     const btn = makeSeenButton(seen);
+    controlContainer.appendChild(btn);
 
-    const holder = document.createElement("div");
-    holder.style.display = "inline-flex";
-    holder.style.alignItems = "center";
-    holder.style.gap = "0.5rem";
-    holder.appendChild(btn);
-    controlCell.appendChild(holder);
-
-    // Auto-mark al hacer clic en el enlace del episodio
-    const link = $("a[href]", tr);
+    // Auto-mark on episode link click
+    const link = $("a[href]", item);
     if (link) {
       link.addEventListener(
         "click",
         async (e) => {
           const alreadySeen = !!store[id];
-          // Actualiza UI y storage (idempotente)
-          const applySeenUI = () => {
-            btn.textContent = "Visto";
-            btn.title = "Marcado como visto. Click para desmarcar.";
-            btn.setAttribute("aria-pressed", "true");
-          };
-
           if (!alreadySeen) {
             store[id] = { t: Date.now() };
           }
 
           if (isPrimaryUnmodifiedClick(e, link)) {
-            // Clic primario en misma pestaña: garantizamos persistencia antes de navegar
+            // Primary click in same tab: guarantee persistence before navigating
             e.preventDefault();
             await saveStore(store);
-            applySeenUI();
+            updateButtonState(btn, true);
+            setItemSeenState(item, true);
             location.href = link.href;
           } else {
-            // Middle/CTRL/CMD/Shift o target=_blank: no bloqueamos la navegación
+            // Middle/CTRL/CMD/Shift or target=_blank: don't block navigation
             if (!alreadySeen) saveStore(store);
-            applySeenUI();
+            updateButtonState(btn, true);
+            setItemSeenState(item, true);
           }
         },
         { passive: false }
@@ -610,27 +394,23 @@
         await saveStore(store);
 
         // Update UI
-        btn.textContent = nowSeen ? "Visto" : "Marcar";
-        btn.title = nowSeen
-          ? "Marcado como visto. Click para desmarcar."
-          : "No visto. Click para marcar.";
-        btn.setAttribute("aria-pressed", String(nowSeen));
-        setRowSeenState(tr, nowSeen);
+        updateButtonState(btn, nowSeen);
+        setItemSeenState(item, nowSeen);
       },
       { passive: true }
     );
 
-    tr.setAttribute(ROW_SEEN_ATTR, "1");
+    item.setAttribute(ITEM_SEEN_ATTR, "1");
   }
 
-  function scanRows(root = document) {
+  function scanItems(root = document) {
     // Heuristic: rows within tables that include at least one link
-    return $$("table tr", root).filter((tr) => $("a[href]", tr));
-  }
-
-  function scanEpisodes(root = document) {
-    // Look for .episode elements inside .views-row
-    return $$(".views-row .episode", root).filter((episode) => $("a[href]", episode));
+    // AND .episode elements inside .views-row
+    return $$("table tr, .views-row .episode", root).filter((item) => {
+        // For TRs, they must not be a table header
+        if (item.tagName === 'TR' && item.closest('thead')) return false;
+        return $("a[href]", item);
+    });
   }
 
   /**
@@ -641,14 +421,14 @@
   (async function main() {
     injectCSS();
 
-    // Cargar y aplicar preferencia de resaltado de filas
+    // Load and apply highlight preference
     const prefs = await loadPrefs();
     applyPrefs(prefs);
 
     if (typeof GM_registerMenuCommand === "function") {
       GM_registerMenuCommand(
         (isRowHlOn(prefs) ? "Desactivar" : "Activar") +
-          " color de filas 'Visto' (actual: " +
+          " color de items 'Visto' (actual: " +
           (isRowHlOn(prefs) ? "ON" : "OFF") +
           ")",
         async () => {
@@ -658,7 +438,7 @@
           await savePrefs(next);
           applyPrefs(next);
           alert(
-            "Resalte de filas: " +
+            "Resalte de items: " +
               (isRowHlOn(next) ? "activado" : "desactivado") +
               ". El texto del menú se actualizará tras recargar."
           );
@@ -668,8 +448,8 @@
       GM_registerMenuCommand(
         "Restablecer preferencias visuales (usar defaults del script)",
         async () => {
-          await GM.setValue(PREFS_KEY, "{}"); // limpia storage
-          const base = {}; // sin valor => tomará DEFAULT_ROW_HL
+          await GM.setValue(PREFS_KEY, "{}"); // clear storage
+          const base = {}; // no value => will take DEFAULT_ROW_HL
           applyPrefs(base);
           alert(
             "Preferencias visuales restablecidas. Estado actual: " +
@@ -679,7 +459,7 @@
         }
       );
 
-      // Comandos para exportar/importar/resetear vistos
+      // Commands to export/import/reset seen episodes
       GM_registerMenuCommand("Exportar vistos (JSON)", exportJSON);
       GM_registerMenuCommand("Importar vistos (JSON)", importJSON);
       GM_registerMenuCommand("Reiniciar marcados", resetAll);
@@ -711,48 +491,37 @@
         } catch {
           return;
         }
-        if (url.origin !== location.origin) return; // solo mismo origen
+        if (url.origin !== location.origin) return; // only same origin
         if (!isEpisodePathname(url.pathname)) return;
 
         const already = !!store[url.pathname];
 
         if (isPrimaryUnmodifiedClick(e, link)) {
-          // Clic primario en misma pestaña: asegurar persistencia antes de navegar
+          // Primary click in same tab: ensure persistence before navigating
           e.preventDefault();
           if (!already) {
             store[url.pathname] = { t: Date.now() };
             await saveStore(store);
           }
-          applySeenUIInRowForLink(link); // si es una fila de temporada, refleja el botón
+          applySeenUIForItemWithLink(link); // reflect in button if it's a decorated item
           location.href = url.href;
         } else {
-          // Middle/Ctrl/Cmd/Shift o target=_blank: no bloqueamos navegación
+          // Middle/Ctrl/Cmd/Shift or target=_blank: don't block navigation
           if (!already) {
             store[url.pathname] = { t: Date.now() };
             saveStore(store); // async fire-and-forget
           }
-          applySeenUIInRowForLink(link);
+          applySeenUIForItemWithLink(link);
         }
       },
       { capture: true, passive: false }
     );
 
     const applyAll = async (root = document) => {
-      // Handle table rows
-      const rows = scanRows(root);
-      for (const tr of rows) {
+      const items = scanItems(root);
+      for (const item of items) {
         try {
-          await decorateTableRow(tr, store);
-        } catch {
-          /* no-op for robustness */
-        }
-      }
-
-      // Handle episode elements
-      const episodes = scanEpisodes(root);
-      for (const episode of episodes) {
-        try {
-          await decorateEpisodeElement(episode, store);
+          await decorateItem(item, store);
         } catch {
           /* no-op for robustness */
         }
