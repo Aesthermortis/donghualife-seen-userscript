@@ -26,7 +26,6 @@
    * Config & Utilities
    * -------------------------------------------------------------
    */
-  const STORE_KEY = "seenEpisodes:v1";
   const PREFS_KEY = "us-dhl:prefs:v1";
   const ITEM_SEEN_ATTR = "data-us-dhl-decorated";
   const BTN_CLASS = "us-dhl-seen-btn";
@@ -311,20 +310,59 @@
     },
   };
 
-  async function loadStore() {
-    const raw = await GM.getValue(STORE_KEY, "{}");
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return {};
+  /**
+   * -------------------------------------------------------------
+   * IndexedDB Storage Layer
+   * -------------------------------------------------------------
+   */
+  const db = (() => {
+    const DB_NAME = "donghualife-seen-db";
+    const STORE_NAME = "seenEpisodes";
+    const DB_VERSION = 1;
+    let dbInstance = null;
+
+    function openDB() {
+      if (dbInstance) return Promise.resolve(dbInstance);
+
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onerror = () => reject("IndexedDB error: " + request.error);
+        request.onsuccess = () => {
+          dbInstance = request.result;
+          resolve(dbInstance);
+        };
+        request.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME);
+          }
+        };
+      });
     }
-  }
 
-  async function saveStore(obj) {
-    await GM.setValue(STORE_KEY, JSON.stringify(obj));
-  }
+    async function perform(mode, operation) {
+      const db = await openDB();
+      const tx = db.transaction(STORE_NAME, mode);
+      const store = tx.objectStore(STORE_NAME);
+      return new Promise((resolve, reject) => {
+        const request = operation(store);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
+    }
 
-  /* Loads user preferences */
+    return {
+      set: (key, value) =>
+        perform("readwrite", (store) => store.put(value, key)),
+      get: (key) => perform("readonly", (store) => store.get(key)),
+      delete: (key) => perform("readwrite", (store) => store.delete(key)),
+      clear: () => perform("readwrite", (store) => store.clear()),
+      getAll: () => perform("readonly", (store) => store.getAll()),
+      getAllKeys: () => perform("readonly", (store) => store.getAllKeys()),
+    };
+  })();
+
+  // Loads user preferences
   async function loadPrefs() {
     const raw = await GM.getValue(PREFS_KEY, "{}");
     try {
@@ -334,7 +372,7 @@
     }
   }
 
-  /* Saves user preferences */
+  // Saves user preferences
   async function savePrefs(prefs) {
     await GM.setValue(PREFS_KEY, JSON.stringify(prefs));
   }
@@ -453,11 +491,16 @@
   }
 
   async function exportJSON() {
-    const data = await GM.getValue(STORE_KEY, "{}");
+    const keys = await db.getAllKeys();
+    const allData = await db.getAll();
+    const exportObj = {};
+    keys.forEach((key, index) => {
+      exportObj[key] = allData[index];
+    });
     UImanager.showExport({
       title: "Exportar Respaldo",
       text: "Copia este texto para guardar un respaldo de tus episodios vistos.",
-      data: data,
+      data: JSON.stringify(exportObj, null, 2),
     });
   }
 
@@ -473,7 +516,12 @@
     try {
       const parsed = JSON.parse(txt);
       if (parsed && typeof parsed === "object") {
-        await GM.setValue(STORE_KEY, JSON.stringify(parsed));
+        await db.clear();
+        for (const key in parsed) {
+          if (Object.prototype.hasOwnProperty.call(parsed, key)) {
+            await db.set(key, parsed[key]);
+          }
+        }
         UImanager.showToast("Importado con éxito. Recargando...");
         setTimeout(() => location.reload(), 1500);
       } else {
@@ -496,7 +544,7 @@
     if (!confirmed) {
       return;
     }
-    await GM.setValue(STORE_KEY, "{}");
+    await db.clear();
     UImanager.showToast("Datos reiniciados. Recargando...");
     setTimeout(() => location.reload(), 1500);
   }
@@ -546,18 +594,18 @@
    * Item decoration (for tables rows and episode cards)
    * -------------------------------------------------------------
    */
-  async function decorateItem(item, store) {
+  async function decorateItem(item, seenSet) {
     if (item.getAttribute(ITEM_SEEN_ATTR) === "1") {
       return;
     }
 
     const id = computeId(item);
-    const seen = !!store[id];
-    setItemSeenState(item, seen);
+    let isSeen = seenSet.has(id);
+    setItemSeenState(item, isSeen);
 
     const isCard = item.matches(".views-row .episode");
     const controlContainer = getButtonContainer(item);
-    const btn = makeSeenButton(seen, isCard);
+    const btn = makeSeenButton(isSeen, isCard);
     controlContainer.appendChild(btn);
 
     // Auto-mark on episode link click
@@ -566,23 +614,24 @@
       link.addEventListener(
         "click",
         async (e) => {
-          const alreadySeen = !!store[id];
-          if (!alreadySeen) {
-            store[id] = { t: Date.now() };
+          const alreadySeen = seenSet.has(id);
+          if (alreadySeen) {
+            // If already seen, just navigate.
+            return;
           }
 
           if (isPrimaryUnmodifiedClick(e, link)) {
             // Primary click in same tab: guarantee persistence before navigating
             e.preventDefault();
-            await saveStore(store);
+            await db.set(id, { t: Date.now() });
+            seenSet.add(id);
             updateButtonState(btn, true);
             setItemSeenState(item, true);
             location.href = link.href;
           } else {
             // Middle/CTRL/CMD/Shift or target=_blank: don't block navigation
-            if (!alreadySeen) {
-              await saveStore(store);
-            }
+            await db.set(id, { t: Date.now() });
+            seenSet.add(id);
             updateButtonState(btn, true);
             setItemSeenState(item, true);
           }
@@ -595,13 +644,16 @@
       "click",
       async (ev) => {
         ev.stopPropagation();
-        const nowSeen = !store[id];
+        const currentlySeen = seenSet.has(id);
+        const nowSeen = !currentlySeen;
+
         if (nowSeen) {
-          store[id] = { t: Date.now() };
+          await db.set(id, { t: Date.now() });
+          seenSet.add(id);
         } else {
-          delete store[id];
+          await db.delete(id);
+          seenSet.delete(id);
         }
-        await saveStore(store);
 
         // Update UI
         updateButtonState(btn, nowSeen);
@@ -680,12 +732,16 @@
       GM.registerMenuCommand("Reiniciar marcados", resetAll);
     }
 
-    const store = await loadStore();
+    // Load all seen episode keys into a Set for fast, synchronous lookups.
+    const seenSet = new Set(await db.getAllKeys());
 
     try {
-      if (isEpisodePathname(location.pathname) && !store[location.pathname]) {
-        store[location.pathname] = { t: Date.now() };
-        await saveStore(store);
+      if (
+        isEpisodePathname(location.pathname) &&
+        !seenSet.has(location.pathname)
+      ) {
+        await db.set(location.pathname, { t: Date.now() });
+        seenSet.add(location.pathname);
       }
     } catch {
       /* noop */
@@ -711,18 +767,18 @@
           return;
         }
 
-        const already = !!store[url.pathname];
+        const alreadySeen = seenSet.has(url.pathname);
+        if (alreadySeen) return;
+
         if (isPrimaryUnmodifiedClick(e, link)) {
           e.preventDefault();
-          if (!already) {
-            store[url.pathname] = { t: Date.now() };
-            await saveStore(store);
-          }
+          await db.set(url.pathname, { t: Date.now() });
+          seenSet.add(url.pathname);
           applySeenUIForItemWithLink(link);
           location.href = url.href;
-        } else if (!already) {
-          store[url.pathname] = { t: Date.now() };
-          await saveStore(store);
+        } else {
+          await db.set(url.pathname, { t: Date.now() });
+          seenSet.add(url.pathname);
           applySeenUIForItemWithLink(link);
         }
       },
@@ -733,7 +789,7 @@
       const items = scanItems(root);
       for (const item of items) {
         try {
-          await decorateItem(item, store);
+          await decorateItem(item, seenSet);
         } catch {
           /* no-op for robustness */
         }
