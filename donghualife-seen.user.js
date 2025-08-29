@@ -321,8 +321,13 @@
    */
   function ensureTableControlColumn(table) {
     if (!table || table.getAttribute(TABLE_MARK_ATTR) === "1") return;
-    // If table has a THEAD, add an empty header cell to keep column alignment
-    if (table.tHead && table.tHead.rows.length) {
+    const cg = table.querySelector("colgroup");
+    if (cg) {
+      const col = document.createElement("col");
+      col.className = CTRL_CELL_CLASS;
+      cg.appendChild(col);
+    }
+    if (table.tHead?.rows?.length) {
       const th = document.createElement("th");
       th.className = CTRL_CELL_CLASS;
       th.textContent = "";
