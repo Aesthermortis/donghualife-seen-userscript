@@ -30,6 +30,7 @@
   const PREFS_KEY = "us-dhl:prefs:v1";
   const ITEM_SEEN_ATTR = "data-us-dhl-decorated";
   const BTN_CLASS = "us-dhl-seen-btn";
+  const CARD_BTN_CLASS = "us-dhl-card-btn";
   const ITEM_SEEN_CLASS = "us-dhl-item-seen";
   const ROOT_HL_CLASS = "us-dhl-rowhl-on";
   const CTRL_CELL_CLASS = "us-dhl-ctrlcol";
@@ -40,6 +41,7 @@
 
   // CSS styles
   const CSS = `
+    /* Estilo base del botón */
     .${BTN_CLASS}{
       cursor:pointer;
       user-select:none;
@@ -64,6 +66,29 @@
     .${BTN_CLASS}[aria-pressed="true"]:hover{ filter:brightness(1.3); }
 
     .${BTN_CLASS}:focus{ outline:2px solid rgba(255,255,255,.35); outline-offset:2px; }
+
+    /* Contenedor relativo para tarjetas de episodio */
+    .views-row .episode {
+      position: relative;
+    }
+
+    /* Estilos específicos para el botón en tarjetas de episodio */
+    .${CARD_BTN_CLASS} {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 10;
+      /* Fondo más opaco para legibilidad sobre imágenes */
+      background: rgba(20, 20, 22, 0.65);
+      border-color: rgba(255, 255, 255, 0.2);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      backdrop-filter: blur(4px);
+    }
+
+    .${CARD_BTN_CLASS}[aria-pressed="true"] {
+      background: rgba(16, 185, 129, 0.6);
+      border-color: rgba(16, 185, 129, 0.8);
+    }
 
     .${CTRL_CELL_CLASS}{
       width:1%;
@@ -109,12 +134,6 @@
     /* Botón en items marcados: filtro de brillo reducido (solo si el highlight global está ON) */
     .${ROOT_HL_CLASS} .${ITEM_SEEN_CLASS} .${BTN_CLASS}[aria-pressed="true"]{
       filter: none;
-    }
-
-    /* Contenedor del botón para tarjetas de episodio */
-    .us-dhl-card-ctrl {
-      margin-top: 8px;
-      text-align: right;
     }
   `;
 
@@ -181,10 +200,10 @@
     return prefix + txt.slice(0, 160);
   }
 
-  function makeSeenButton(isSeen) {
+  function makeSeenButton(isSeen, isCard) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = BTN_CLASS;
+    btn.className = isCard ? `${BTN_CLASS} ${CARD_BTN_CLASS}` : BTN_CLASS;
     updateButtonState(btn, isSeen);
     btn.setAttribute("aria-label", "Alternar episodio visto");
     return btn;
@@ -325,15 +344,9 @@
             item.appendChild(cell);
         }
         return cell;
-    } else { // Episode card
-        let container = item.querySelector('.us-dhl-card-ctrl');
-        if (!container) {
-            container = document.createElement('div');
-            container.className = 'us-dhl-card-ctrl';
-            item.appendChild(container);
-        }
-        return container;
     }
+    // Para tarjetas de episodio, el botón se añade directamente al item.
+    return item;
   }
 
   /**
@@ -348,8 +361,9 @@
     const seen = !!store[id];
     setItemSeenState(item, seen);
 
+    const isCard = item.matches('.views-row .episode');
     const controlContainer = getButtonContainer(item);
-    const btn = makeSeenButton(seen);
+    const btn = makeSeenButton(seen, isCard);
     controlContainer.appendChild(btn);
 
     // Auto-mark on episode link click
