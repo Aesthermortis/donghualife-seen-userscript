@@ -4,7 +4,7 @@
 // @version      1.0.3
 // @description  Adds a button to mark watched episodes in season tables and episode cards on donghualife.com.
 // @author       Aesthermortis
-// @match        *://donghualife.com/*
+// @match        *://*.donghualife.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=donghualife.com
 // @run-at       document-idle
 // @grant        GM.getValue
