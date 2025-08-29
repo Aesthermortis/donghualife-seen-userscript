@@ -448,15 +448,34 @@
     if (episode.getAttribute(EPISODE_SEEN_ATTR) === "1") return; // already processed
 
     const id = computeEpisodeIdFromElement(episode);
-    const seen = !!store[id];
+    
+    // Check both store and existing element state to determine if episode is seen
+    const storeHasSeen = !!store[id];
+    const elementHasSeen = episode.classList.contains(EPISODE_SEEN_CLASS) && 
+                          episode.getAttribute("data-us-dhl-episode-seen") === "1";
+    const seen = storeHasSeen || elementHasSeen;
+    
+    // If element has seen state but store doesn't, sync store with element state
+    if (elementHasSeen && !storeHasSeen) {
+      store[id] = { t: Date.now() };
+      await saveStore(store);
+    }
+    
     setEpisodeSeenState(episode, seen);
 
+    // Check if episode already has a button (in case of partial decoration)
+    let existingBtn = episode.querySelector("." + EPISODE_BTN_CLASS);
+    if (existingBtn) {
+      existingBtn.remove();
+    }
+
     let btn = makeEpisodeSeenButton(seen);
+    episode.appendChild(btn);
+    
+    // Update button state for seen episodes (must be done after adding to DOM)
     if (seen) {
       btn = updateEpisodeButtonState(btn, true);
     }
-
-    episode.appendChild(btn);
 
     // Auto-mark al hacer clic en el enlace del episodio
     const link = $("a[href]", episode);
