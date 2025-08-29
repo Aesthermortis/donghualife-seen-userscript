@@ -27,12 +27,18 @@
    * -------------------------------------------------------------
    */
   const STORE_KEY = "seenEpisodes:v1";
+  const PREFS_KEY = "us-dhl:prefs:v1";
   const ROW_SEEN_ATTR = "data-us-dhl-decorated";
   const BTN_CLASS = "us-dhl-seen-btn";
   const ROW_SEEN_CLASS = "us-dhl-seen-row";
+  const ROOT_HL_CLASS = "us-dhl-rowhl-on";
   const CTRL_CELL_CLASS = "us-dhl-ctrlcol";
   const TABLE_MARK_ATTR = "data-us-dhl-ctrlcol";
 
+  // Default row highlight (true = ON por defecto, false = OFF por defecto)
+  const DEFAULT_ROW_HL = false; // cámbialo a false si quieres opt-in por defecto
+
+  // CSS styles
   const CSS = `
     .${BTN_CLASS}{
       cursor:pointer;
@@ -54,6 +60,8 @@
       color:#e8fff0;
     }
 
+    .${BTN_CLASS}[aria-pressed="true"]:hover{ filter:brightness(1.3); }
+
     .${BTN_CLASS}:focus{ outline:2px solid rgba(255,255,255,.35); outline-offset:2px; }
 
     .${CTRL_CELL_CLASS}{
@@ -62,16 +70,43 @@
       text-align:right;
     }
 
-    .${ROW_SEEN_CLASS}{
+    /* Estilo de fila marcada (solo si el highlight global está ON) */
+    .${ROOT_HL_CLASS} .${ROW_SEEN_CLASS}{
       background: rgba(16,185,129,.06);
       transition: background .15s ease;
     }
 
-    .${ROW_SEEN_CLASS} a{
+    /* Intensidad al hover (solo si el highlight global está ON) */
+    .${ROOT_HL_CLASS} .${ROW_SEEN_CLASS}:hover{
+      background: rgba(16,185,129,.12);
+    }
+
+    /* A11y: también resalta cuando la fila contiene foco (navegación con teclado) */
+    .${ROOT_HL_CLASS} .${ROW_SEEN_CLASS}:focus-within{
+      background: rgba(16,185,129,.12);
+    }
+
+    /* Evitar “parpadeo” en móvil/touch: aplica hover solo en puntero fino */
+    @media (hover: hover) and (pointer: fine){
+      .us-dhl-rowhl-on .us-dhl-seen-row{
+        transition: background .15s ease;
+      }
+    }
+
+    /* Respeta “reducir movimiento” del sistema */
+    @media (prefers-reduced-motion: reduce){
+      .us-dhl-rowhl-on .us-dhl-seen-row{
+        transition: none;
+      }
+    }
+
+    /* Enlaces en filas marcadas: opacidad ligeramente reducida (solo si el highlight global está ON) */
+    .${ROOT_HL_CLASS} .${ROW_SEEN_CLASS} a{
       opacity: .95;
     }
 
-    .${ROW_SEEN_CLASS} .${BTN_CLASS}[aria-pressed="true"]{
+    /* Botón en filas marcadas: filtro de brillo reducido (solo si el highlight global está ON) */
+    .${ROOT_HL_CLASS} .${ROW_SEEN_CLASS} .${BTN_CLASS}[aria-pressed="true"]{
       filter: none;
     }
   `;
@@ -79,6 +114,7 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+  // Inyecta CSS si no está ya presente
   function injectCSS() {
     if ($("#us-dhl-seen-style")) return;
     const s = document.createElement("style");
@@ -98,6 +134,34 @@
 
   async function saveStore(obj) {
     await GM.setValue(STORE_KEY, JSON.stringify(obj));
+  }
+
+  /* Carga las preferencias del usuario */
+  async function loadPrefs() {
+    const raw = await GM.getValue(PREFS_KEY, "{}");
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+
+  /* Guarda las preferencias del usuario */
+  async function savePrefs(prefs) {
+    await GM.setValue(PREFS_KEY, JSON.stringify(prefs));
+  }
+
+  // Devuelve el estado efectivo (storage si existe, si no el default de código)
+  function isRowHlOn(prefs) {
+    return typeof prefs.rowHighlight === "boolean"
+      ? prefs.rowHighlight
+      : DEFAULT_ROW_HL;
+  }
+
+  // Aplica las preferencias visuales (resalte de filas)
+  function applyPrefs(prefs) {
+    const on = isRowHlOn(prefs);
+    document.documentElement.classList.toggle(ROOT_HL_CLASS, on);
   }
 
   function computeEpisodeId(tr) {
@@ -349,7 +413,45 @@
   (async function main() {
     injectCSS();
 
+    // Cargar y aplicar preferencia de resaltado de filas
+    const prefs = await loadPrefs();
+    applyPrefs(prefs);
+
     if (typeof GM_registerMenuCommand === "function") {
+      GM_registerMenuCommand(
+        (isRowHlOn(prefs) ? "Desactivar" : "Activar") +
+          " color de filas 'Visto' (actual: " +
+          (isRowHlOn(prefs) ? "ON" : "OFF") +
+          ")",
+        async () => {
+          const latest = await loadPrefs();
+          const current = isRowHlOn(latest);
+          const next = { ...latest, rowHighlight: !current };
+          await savePrefs(next);
+          applyPrefs(next);
+          alert(
+            "Resalte de filas: " +
+              (isRowHlOn(next) ? "activado" : "desactivado") +
+              ". El texto del menú se actualizará tras recargar."
+          );
+        }
+      );
+
+      GM_registerMenuCommand(
+        "Restablecer preferencias visuales (usar defaults del script)",
+        async () => {
+          await GM.setValue(PREFS_KEY, "{}"); // limpia storage
+          const base = {}; // sin valor => tomará DEFAULT_ROW_HL
+          applyPrefs(base);
+          alert(
+            "Preferencias visuales restablecidas. Estado actual: " +
+              (isRowHlOn(base) ? "ON" : "OFF") +
+              ". El texto del menú se actualizará tras recargar."
+          );
+        }
+      );
+
+      // Comandos para exportar/importar/resetear vistos
       GM_registerMenuCommand("Exportar vistos (JSON)", exportJSON);
       GM_registerMenuCommand("Importar vistos (JSON)", importJSON);
       GM_registerMenuCommand("Reiniciar marcados", resetAll);
