@@ -532,7 +532,9 @@
         title: "Importar Respaldo",
         text: "Pega aquí el JSON de respaldo que guardaste previamente.",
       });
-      if (txt === null) return; // User cancelled
+      if (txt === null) {
+        return;
+      }
 
       try {
         const parsed = JSON.parse(txt);
@@ -546,7 +548,9 @@
             cancelLabel: "Cancelar",
           });
 
-          if (!confirmed) return;
+          if (!confirmed) {
+            return;
+          }
 
           await DatabaseManager.clear();
           for (const key in parsed) {
@@ -572,7 +576,9 @@
         okLabel: "Sí, borrar todo",
         cancelLabel: "Cancelar",
       });
-      if (!confirmed) return;
+      if (!confirmed) {
+        return;
+      }
 
       try {
         await DatabaseManager.clear();
@@ -591,7 +597,7 @@
         try {
           return new URL(a.href, location.origin).pathname;
         } catch (e) {
-          console.warn("Invalid URL found in element, falling back to text content.", a.href);
+          console.warn("Invalid URL found in element, falling back to text content.", a.href, e);
         }
       }
       const txt = (element.textContent || "").replace(/\s+/g, " ").trim();
@@ -624,7 +630,9 @@
     };
 
     const ensureTableControlColumn = (table) => {
-      if (!table || table.getAttribute(TABLE_MARK_ATTR) === "1") return;
+      if (!table || table.getAttribute(TABLE_MARK_ATTR) === "1") {
+        return;
+      }
       if (table.tHead?.rows?.length) {
         const th = document.createElement("th");
         th.className = CTRL_CELL_CLASS;
@@ -650,10 +658,14 @@
 
     // --- Core Logic ---
     const decorateItem = async (item) => {
-      if (item.getAttribute(ITEM_SEEN_ATTR) === "1") return;
+      if (item.getAttribute(ITEM_SEEN_ATTR) === "1") {
+        return;
+      }
 
       const id = computeId(item);
-      if (!id) return;
+      if (!id) {
+        return;
+      }
 
       const isSeen = seenSet.has(id);
       setItemSeenState(item, isSeen);
@@ -747,7 +759,9 @@
         "click",
         async (e) => {
           const link = e.target?.closest("a[href]");
-          if (!link) return;
+          if (!link) {
+            return;
+          }
 
           let url;
           try {
@@ -761,7 +775,9 @@
           }
 
           const alreadySeen = seenSet.has(url.pathname);
-          if (alreadySeen) return;
+          if (alreadySeen) {
+            return;
+          }
 
           if (isPrimaryUnmodifiedClick(e, link)) {
             e.preventDefault();
@@ -786,12 +802,15 @@
     };
 
     const createSettingsButton = () => {
-      if ($(".us-dhl-fab")) return;
+      if ($(".us-dhl-fab")) {
+        return;
+      }
 
       const fab = document.createElement("button");
       fab.className = "us-dhl-fab";
       fab.title = "Configuración del script";
-      fab.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.44,0.17-0.48,0.41L9.22,5.72C8.63,5.96,8.1,6.29,7.6,6.67L5.22,5.71C5,5.64,4.75,5.7,4.63,5.92L2.71,9.24 c-0.12,0.2-0.07,0.47,0.12,0.61l2.03,1.58C4.8,11.66,4.78,11.98,4.78,12.3c0,0.32,0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.38,2.91 c0.04,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.48-0.41l0.38-2.91c0.59-0.24,1.12-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0.02,0.59-0.22l1.92-3.32c0.12-0.2,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>`;
+      fab.innerHTML =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.44,0.17-0.48,0.41L9.22,5.72C8.63,5.96,8.1,6.29,7.6,6.67L5.22,5.71C5,5.64,4.75,5.7,4.63,5.92L2.71,9.24 c-0.12,0.2-0.07,0.47,0.12,0.61l2.03,1.58C4.8,11.66,4.78,11.98,4.78,12.3c0,0.32,0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.38,2.91 c0.04,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.48-0.41l0.38-2.91c0.59-0.24,1.12-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0.02,0.59-0.22l1.92-3.32c0.12-0.2,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>';
 
       fab.addEventListener("click", async () => {
         const prefs = await loadPrefs();
@@ -841,7 +860,9 @@
     };
 
     const setupMenuCommands = async (prefs) => {
-      if (typeof GM.registerMenuCommand !== "function") return;
+      if (typeof GM.registerMenuCommand !== "function") {
+        return;
+      }
 
       GM.registerMenuCommand(
         (isRowHlOn(prefs) ? "Desactivar" : "Activar") + " color de items 'Visto'",
