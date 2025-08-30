@@ -183,6 +183,47 @@
     .us-dhl-modal-btn.primary { background: #059669; color: #fff; }
     .us-dhl-modal-btn.secondary { background: rgba(255,255,255,.1); color: #f5f7fa;
     }
+
+    /* Floating Action Button (FAB) for settings */
+    .us-dhl-fab {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 9990;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: none;
+      background: #059669;
+      color: white;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform .2s ease, filter .2s ease;
+    }
+    .us-dhl-fab:hover {
+      filter: brightness(1.1);
+      transform: scale(1.05);
+    }
+    .us-dhl-fab svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    /* New: Settings Modal specific styles */
+    .us-dhl-settings-menu {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .us-dhl-settings-menu .us-dhl-modal-btn {
+      width: 100%;
+      text-align: center;
+      padding: 0.75rem 1rem;
+      justify-content: center;
+    }
   `;
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -301,6 +342,45 @@
       $(".primary", overlay).addEventListener("click", close);
       textarea.select();
     },
+    // Display a modal dialog with configurable action buttons
+    showSettingsMenu({ title, actions }) {
+      const actionButtons = actions
+        .map(
+          (action, index) =>
+            `<button class="us-dhl-modal-btn ${
+              action.isDestructive ? "secondary" : "primary"
+            }" data-action-index="${index}">${action.label}</button>`,
+        )
+        .join("");
+
+      const modalHTML = `
+        <div class="us-dhl-modal-header">${title}</div>
+        <div class="us-dhl-modal-body">
+            <div class="us-dhl-settings-menu">
+                ${actionButtons}
+            </div>
+        </div>
+      `;
+      const overlay = this._createModal(modalHTML);
+      const modal = $(".us-dhl-modal", overlay);
+      const close = () => overlay.remove();
+
+      modal.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const button = e.target.closest("[data-action-index]");
+        if (button) {
+          const actionIndex = parseInt(button.dataset.actionIndex, 10);
+          if (actions[actionIndex]?.onClick) {
+            actions[actionIndex].onClick();
+          }
+          // Close modal after action, unless the action itself opens another modal
+          if (!actions[actionIndex]?.keepOpen) {
+            close();
+          }
+        }
+      });
+      overlay.addEventListener("click", close);
+    },
   };
 
   /**
@@ -385,7 +465,12 @@
     // Prefer the first absolute pathname to be stable across navigations
     const a = $("a[href]", element);
     if (a) {
-      return new URL(a.href, location.origin).pathname;
+      try {
+        // Use try-catch for invalid URLs which can happen
+        return new URL(a.href, location.origin).pathname;
+      } catch (e) {
+        // Fallback if URL is invalid
+      }
     }
     // Fallback: compact hash-like key from element text
     const txt = (element.textContent || "").replace(/\s+/g, " ").trim();
@@ -498,7 +583,20 @@
     }
     try {
       const parsed = JSON.parse(txt);
-      if (parsed && typeof parsed === "object") {
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const confirmed = await UImanager.showConfirm({
+          title: "Confirmar Importación",
+          text: `Se encontraron ${
+            Object.keys(parsed).length
+          } registros. Esto sobreescribirá tus datos actuales. ¿Deseas continuar?`,
+          okLabel: "Sí, importar",
+          cancelLabel: "Cancelar",
+        });
+
+        if (!confirmed) {
+          return;
+        }
+
         await db.clear();
         for (const key in parsed) {
           if (Object.prototype.hasOwnProperty.call(parsed, key)) {
@@ -508,7 +606,7 @@
         UImanager.showToast("Importado con éxito. Recargando...");
         setTimeout(() => location.reload(), 1500);
       } else {
-        UImanager.showToast("Error: El texto introducido no es un JSON válido.");
+        UImanager.showToast("Error: El texto introducido no es un objeto JSON válido.");
       }
     } catch {
       UImanager.showToast("Error: El texto introducido no es un JSON válido.");
@@ -581,6 +679,10 @@
     }
 
     const id = computeId(item);
+    if (!id) {
+      return;
+    } // Do not process items without a valid ID
+
     let isSeen = seenSet.has(id);
     setItemSeenState(item, isSeen);
 
@@ -658,6 +760,56 @@
     });
   }
 
+  // Function to create and manage the floating settings button
+  function createSettingsButton() {
+    if ($(".us-dhl-fab")) {
+      return;
+    }
+
+    const fab = document.createElement("button");
+    fab.className = "us-dhl-fab";
+    fab.title = "Configuración del script";
+    fab.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.44,0.17-0.48,0.41L9.22,5.72C8.63,5.96,8.1,6.29,7.6,6.67L5.22,5.71C5,5.64,4.75,5.7,4.63,5.92L2.71,9.24 c-0.12,0.2-0.07,0.47,0.12,0.61l2.03,1.58C4.8,11.66,4.78,11.98,4.78,12.3c0,0.32,0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.38,2.91 c0.04,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.48-0.41l0.38-2.91c0.59-0.24,1.12-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0.02,0.59-0.22l1.92-3.32c0.12-0.2,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>`;
+
+    fab.addEventListener("click", async () => {
+      const prefs = await loadPrefs();
+      const actions = [
+        {
+          label: (isRowHlOn(prefs) ? "Desactivar" : "Activar") + " color de items 'Visto'",
+          async onClick() {
+            const latest = await loadPrefs();
+            const next = { ...latest, rowHighlight: !isRowHlOn(latest) };
+            await savePrefs(next);
+            applyPrefs(next);
+            UImanager.showToast(
+              `Resalte de items ${isRowHlOn(next) ? "activado" : "desactivado"}.`,
+            );
+          },
+        },
+        {
+          label: "Restablecer preferencias visuales",
+          isDestructive: true,
+          async onClick() {
+            await GM.setValue(PREFS_KEY, "{}");
+            applyPrefs({});
+            UImanager.showToast("Preferencias visuales restablecidas.");
+          },
+        },
+        { label: "Exportar vistos (JSON)", onClick: exportJSON, keepOpen: true },
+        { label: "Importar vistos (JSON)", onClick: importJSON, keepOpen: true },
+        {
+          label: "Reiniciar todos los vistos",
+          onClick: resetAll,
+          isDestructive: true,
+          keepOpen: true,
+        },
+      ];
+      UImanager.showSettingsMenu({ title: "Configuración", actions });
+    });
+
+    document.body.appendChild(fab);
+  }
+
   /**
    * -------------------------------------------------------------
    * Main
@@ -683,6 +835,12 @@
     const prefs = await loadPrefs();
     applyPrefs(prefs);
 
+    // Creates a floating action button (FAB) for easy access to script settings and data management.
+    // This provides a modern, accessible UI alternative to traditional userscript menu commands,
+    // ensuring consistent functionality across different userscript managers and environments.
+    createSettingsButton();
+
+    // Fallback for environments that still support GM.registerMenuCommand, to not lose the feature there.
     if (typeof GM.registerMenuCommand === "function") {
       GM.registerMenuCommand(
         (isRowHlOn(prefs) ? "Desactivar" : "Activar") + " color de items 'Visto'",
@@ -699,8 +857,7 @@
 
       GM.registerMenuCommand("Restablecer preferencias visuales", async () => {
         await GM.setValue(PREFS_KEY, "{}");
-        const base = {};
-        applyPrefs(base);
+        applyPrefs({});
         UImanager.showToast("Preferencias visuales restablecidas.");
       });
 
