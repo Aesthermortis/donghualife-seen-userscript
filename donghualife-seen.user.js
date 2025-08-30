@@ -228,12 +228,7 @@
       document.body.appendChild(overlay);
       return overlay;
     },
-    showConfirm({
-      title,
-      text,
-      okLabel = "Aceptar",
-      cancelLabel = "Cancelar",
-    }) {
+    showConfirm({ title, text, okLabel = "Aceptar", cancelLabel = "Cancelar" }) {
       return new Promise((resolve) => {
         const modalHTML = `
           <div class="us-dhl-modal-header">${title}</div>
@@ -279,9 +274,7 @@
 
         modal.addEventListener("click", (e) => e.stopPropagation());
         overlay.addEventListener("click", () => close(null));
-        $(".primary", overlay).addEventListener("click", () =>
-          close(input.value)
-        );
+        $(".primary", overlay).addEventListener("click", () => close(input.value));
         $(".secondary", overlay).addEventListener("click", () => close(null));
         input.focus();
       });
@@ -322,7 +315,9 @@
     let dbInstance = null;
 
     function openDB() {
-      if (dbInstance) return Promise.resolve(dbInstance);
+      if (dbInstance) {
+        return Promise.resolve(dbInstance);
+      }
 
       return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -352,8 +347,7 @@
     }
 
     return {
-      set: (key, value) =>
-        perform("readwrite", (store) => store.put(value, key)),
+      set: (key, value) => perform("readwrite", (store) => store.put(value, key)),
       get: (key) => perform("readonly", (store) => store.get(key)),
       delete: (key) => perform("readwrite", (store) => store.delete(key)),
       clear: () => perform("readwrite", (store) => store.clear()),
@@ -379,9 +373,7 @@
 
   // Returns the effective state (storage if it exists, otherwise the code default)
   function isRowHlOn(prefs) {
-    return typeof prefs.rowHighlight === "boolean"
-      ? prefs.rowHighlight
-      : DEFAULT_ROW_HL;
+    return typeof prefs.rowHighlight === "boolean" ? prefs.rowHighlight : DEFAULT_ROW_HL;
   }
 
   // Applies visual preferences (row highlighting)
@@ -437,12 +429,7 @@
   }
 
   // Route patterns that represent episode pages (adjustable)
-  const EP_PATTERNS = [
-    /\/episode\//i,
-    /\/watch\//i,
-    /\/capitulo\//i,
-    /\/ver\//i,
-  ];
+  const EP_PATTERNS = [/\/episode\//i, /\/watch\//i, /\/capitulo\//i, /\/ver\//i];
 
   function isEpisodePathname(pn) {
     try {
@@ -478,11 +465,7 @@
   function observeMutations(callback) {
     const debounced = debounce(callback, 120);
     const mo = new MutationObserver((muts) => {
-      if (
-        muts.some(
-          (m) => (m.addedNodes && m.addedNodes.length) || m.type === "childList"
-        )
-      ) {
+      if (muts.some((m) => (m.addedNodes && m.addedNodes.length) || m.type === "childList")) {
         debounced();
       }
     });
@@ -525,9 +508,7 @@
         UImanager.showToast("Importado con éxito. Recargando...");
         setTimeout(() => location.reload(), 1500);
       } else {
-        UImanager.showToast(
-          "Error: El texto introducido no es un JSON válido."
-        );
+        UImanager.showToast("Error: El texto introducido no es un JSON válido.");
       }
     } catch {
       UImanager.showToast("Error: El texto introducido no es un JSON válido.");
@@ -636,7 +617,7 @@
             setItemSeenState(item, true);
           }
         },
-        { passive: false }
+        { passive: false },
       );
     }
 
@@ -659,7 +640,7 @@
         updateButtonState(btn, nowSeen);
         setItemSeenState(item, nowSeen);
       },
-      { passive: true }
+      { passive: true },
     );
 
     item.setAttribute(ITEM_SEEN_ATTR, "1");
@@ -704,19 +685,16 @@
 
     if (typeof GM.registerMenuCommand === "function") {
       GM.registerMenuCommand(
-        (isRowHlOn(prefs) ? "Desactivar" : "Activar") +
-          " color de items 'Visto'",
+        (isRowHlOn(prefs) ? "Desactivar" : "Activar") + " color de items 'Visto'",
         async () => {
           const latest = await loadPrefs();
           const next = { ...latest, rowHighlight: !isRowHlOn(latest) };
           await savePrefs(next);
           applyPrefs(next);
           UImanager.showToast(
-            "Resalte de items " +
-              (isRowHlOn(next) ? "activado" : "desactivado") +
-              "."
+            "Resalte de items " + (isRowHlOn(next) ? "activado" : "desactivado") + ".",
           );
-        }
+        },
       );
 
       GM.registerMenuCommand("Restablecer preferencias visuales", async () => {
@@ -736,10 +714,7 @@
     const seenSet = new Set(await db.getAllKeys());
 
     try {
-      if (
-        isEpisodePathname(location.pathname) &&
-        !seenSet.has(location.pathname)
-      ) {
+      if (isEpisodePathname(location.pathname) && !seenSet.has(location.pathname)) {
         await db.set(location.pathname, { t: Date.now() });
         seenSet.add(location.pathname);
       }
@@ -760,10 +735,7 @@
         } catch {
           return;
         }
-        if (
-          url.origin !== location.origin ||
-          !isEpisodePathname(url.pathname)
-        ) {
+        if (url.origin !== location.origin || !isEpisodePathname(url.pathname)) {
           return;
         }
 
@@ -782,7 +754,7 @@
           applySeenUIForItemWithLink(link);
         }
       },
-      { capture: true, passive: false }
+      { capture: true, passive: false },
     );
 
     const applyAll = async (root = document) => {
