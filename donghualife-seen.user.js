@@ -2,7 +2,7 @@
 // @name         DonghuaLife – Mark Watched Episodes (✅)
 // @namespace    us_dhl_seen
 // @version      1.0.4
-// @description  Adds a button to mark watched episodes in season tables and episode cards on donghualife.com.
+// @description  Adds a button to mark watched episodes and syncs status across tabs.
 // @author       Aesthermortis
 // @match        *://*.donghualife.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=donghualife.com
@@ -34,6 +34,7 @@
   const ROOT_HL_CLASS = "us-dhl-rowhl-on";
   const CTRL_CELL_CLASS = "us-dhl-ctrlcol";
   const TABLE_MARK_ATTR = "data-us-dhl-ctrlcol";
+  const SYNC_CHANNEL_NAME = "us-dhl-sync:v1"; // Added for BroadcastChannel
   const DEFAULT_ROW_HL = false; // Default row highlight (true = ON, false = OFF)
   const EP_PATTERNS = [/\/episode\//i, /\/watch\//i, /\/capitulo\//i, /\/ver\//i];
 
@@ -483,6 +484,7 @@
    */
   const App = (() => {
     let seenSet = new Set(); // In-memory cache of seen episode keys
+    let syncChannel = null; // Holds the BroadcastChannel instance for cross-tab sync.
 
     // --- Preferences Management ---
     const loadPrefs = async () => {
@@ -656,6 +658,26 @@
       return item; // For cards, append directly to the item.
     };
 
+    /**
+     * Updates the UI for a specific item based on its seen state.
+     * This function is called both by local user actions and by the sync channel.
+     * @param {string} id - The unique identifier of the episode item.
+     * @param {boolean} isSeen - The new seen state.
+     */
+    const updateItemUI = (id, isSeen) => {
+      // Find the DOM element that has already been decorated and corresponds to the ID.
+      const item = $$(`[${ITEM_SEEN_ATTR}]`).find((el) => computeId(el) === id);
+      if (!item) {
+        return; // The item is not present in the current view.
+      }
+
+      const btn = $(`.${BTN_CLASS}`, item);
+      if (btn) {
+        updateButtonState(btn, isSeen);
+      }
+      setItemSeenState(item, isSeen);
+    };
+
     // --- Core Logic ---
     const decorateItem = async (item) => {
       if (item.getAttribute(ITEM_SEEN_ATTR) === "1") {
@@ -688,8 +710,15 @@
             await DatabaseManager.delete(id);
             seenSet.delete(id);
           }
+
+          // Update local UI immediately.
           updateButtonState(btn, nowSeen);
           setItemSeenState(item, nowSeen);
+
+          // Broadcast the change to other tabs.
+          if (syncChannel) {
+            syncChannel.postMessage({ id, seen: nowSeen });
+          }
         } catch (error) {
           console.error("Failed to update seen status in DB:", error);
           UIManager.showToast("Error al guardar el estado.");
@@ -784,6 +813,10 @@
             try {
               await DatabaseManager.set(url.pathname, { t: Date.now() });
               seenSet.add(url.pathname);
+              // Broadcast this auto-mark event as well
+              if (syncChannel) {
+                syncChannel.postMessage({ id: url.pathname, seen: true });
+              }
               location.href = url.href;
             } catch (error) {
               console.error("Failed to mark item as seen before navigation:", error);
@@ -795,6 +828,10 @@
               console.error("Failed to mark item as seen in background:", error);
             });
             seenSet.add(url.pathname);
+            // Also broadcast this change
+            if (syncChannel) {
+              syncChannel.postMessage({ id: url.pathname, seen: true });
+            }
           }
         },
         { capture: true, passive: false },
@@ -863,7 +900,7 @@
       fab.className = "us-dhl-fab";
       fab.title = "Configuración del script";
       fab.innerHTML =
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.44,0.17-0.48,0.41L9.22,5.72C8.63,5.96,8.1,6.29,7.6,6.67L5.22,5.71C5,5.64,4.75,5.7,4.63,5.92L2.71,9.24 c-0.12,0.2-0.07,0.47,0.12,0.61l2.03,1.58C4.8,11.66,4.78,11.98,4.78,12.3c0,0.32,0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.38,2.91 c0.04,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.48-0.41l0.38-2.91c0.59-0.24,1.12-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0.02,0.59-0.22l1.92-3.32c0.12-0.2,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>';
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.44,0.17-0.48,0.41L9.22,5.72C8.63,5.96,8.1,6.29,7.6,6.67L5.22,5.71C5,5.64,4.75,5.7,4.63,5.92L2.71,9.24 c-0.12,0.2-0.07,0.47,0.12,0.61l2.03,1.58C4.8,11.66,4.78,11.98,4.78,12.3c0,0.32,0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.38,2.91 c0.04,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.48,0.41l0.38-2.91c0.59-0.24,1.12-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0.02,0.59-0.22l1.92-3.32c0.12-0.2,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>';
 
       // The event listener is now cleaner, delegating the work to a dedicated function.
       fab.addEventListener("click", openSettingsMenu);
@@ -926,6 +963,24 @@
           console.error("Failed to load seen episodes from DB:", error);
           UIManager.showToast("Error al cargar los datos de episodios vistos.");
           return; // Stop execution if DB is not available
+        }
+
+        // --- BroadcastChannel Initialization ---
+        // Establishes a communication channel between open tabs for real-time state synchronization.
+        if ("BroadcastChannel" in window) {
+          syncChannel = new BroadcastChannel(SYNC_CHANNEL_NAME);
+          syncChannel.onmessage = (event) => {
+            const { id, seen } = event.data;
+
+            // Update the in-memory set in this tab.
+            if (seen) {
+              seenSet.add(id);
+            } else {
+              seenSet.delete(id);
+            }
+            // Update the UI to reflect the change from another tab.
+            updateItemUI(id, seen);
+          };
         }
 
         // Auto-mark current episode page if it's not marked yet
