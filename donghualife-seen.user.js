@@ -749,12 +749,21 @@
 
     const applyAll = async (root = document) => {
       const items = scanItems(root);
-      // Use Promise.all for concurrent decoration
-      await Promise.all(
-        items.map((item) =>
-          decorateItem(item).catch((e) => console.error("Failed to decorate item:", e)),
-        ),
-      );
+      const BATCH_SIZE = 10;
+
+      for (let i = 0; i < items.length; i += BATCH_SIZE) {
+        const batch = items.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map((item) =>
+            decorateItem(item).catch((e) => console.error("Failed to decorate item:", e)),
+          ),
+        );
+
+        // Yield to the event loop to keep UI responsive
+        if (i + BATCH_SIZE < items.length) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
     };
 
     /**
