@@ -36,7 +36,15 @@
   const TABLE_MARK_ATTR = "data-us-dhl-ctrlcol";
   const SYNC_CHANNEL_NAME = "us-dhl-sync:v1"; // Added for BroadcastChannel
   const DEFAULT_ROW_HL = false; // Default row highlight (true = ON, false = OFF)
-  const EP_PATTERNS = [/\/episode\//i, /\/watch\//i, /\/capitulo\//i, /\/ver\//i];
+  const EP_PATTERNS = [
+    /\/episode\//i,
+    /\/watch\//i,
+    /\/capitulo\//i,
+    /\/ver\//i,
+    /\/ep\//i,
+    /\/e\//i,
+    /\/[0-9]+\/?$/i, // URLs ending with a number (e.g., /1234)
+  ];
 
   // CSS styles
   const CSS = `
@@ -788,7 +796,12 @@
     };
 
     const isEpisodePathname = (pn) => {
-      return EP_PATTERNS.some((rx) => rx.test(pn));
+      // Exclude non-episode paths
+      if (pn.includes("/user/") || pn.includes("/search/") || pn.includes("/category/")) {
+        return false;
+      }
+
+      return EP_PATTERNS.some((rx) => rx.test(pn)) || /\/[^/]+\/[0-9]+/.test(pn); // Pattern: /series/123
     };
 
     const isPrimaryUnmodifiedClick = (e, link) => {
