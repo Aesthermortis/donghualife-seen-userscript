@@ -493,6 +493,7 @@
   const App = (() => {
     let seenSet = new Set(); // In-memory cache of seen episode keys
     let syncChannel = null; // Holds the BroadcastChannel instance for cross-tab sync.
+    let mutationObserver = null;
 
     // --- Preferences Management ---
     const loadPrefs = async () => {
@@ -775,8 +776,11 @@
     };
 
     /**
-     * Sets up a MutationObserver to watch for dynamically added nodes.
-     * @param {Function} callback - The function to call when mutations are observed.
+     * Sets up a MutationObserver to watch for the addition of nodes anywhere in the document body.
+     * When new nodes are added, it executes a provided callback function.
+     *
+     * @param {function} callback The function to be called when nodes are added to the DOM.
+     * @returns {{disconnect: function(): void, observer: MutationObserver}} An object containing the `disconnect` function to stop observing, and the `observer` instance itself.
      */
     const observeMutations = (callback) => {
       const observer = new MutationObserver((mutationsList) => {
@@ -792,7 +796,10 @@
         subtree: true,
       });
 
-      return observer;
+      return {
+        disconnect: () => observer.disconnect(),
+        observer,
+      };
     };
 
     const isEpisodePathname = (pn) => {
@@ -996,6 +1003,16 @@
           UIManager.showToast("Error al cargar los datos de episodios vistos.");
           return; // Stop execution if DB is not available
         }
+
+        // --- MUTATION OBSERVER MANAGEMENT ---
+        // Disconnect the previous observer if it exists to prevent duplicate observers
+        if (mutationObserver) {
+          mutationObserver.disconnect();
+        }
+
+        // Create and initialize a new MutationObserver
+        // This observer watches for changes in the DOM and applies updates with a debounced callback
+        mutationObserver = observeMutations(debounce(() => applyAll(), 150));
 
         // --- BroadcastChannel Initialization ---
         // Establishes a communication channel between open tabs for real-time state synchronization.
