@@ -729,12 +729,22 @@
     };
 
     const scanItems = (root = document) => {
-      return $$("table tr, .views-row .episode", root).filter((item) => {
-        if (item.tagName === "TR" && item.closest("thead")) {
-          return false;
-        }
-        return !!$("a[href]", item);
-      });
+      try {
+        return $$("table tr, .views-row .episode", root).filter((item) => {
+          try {
+            if (item.tagName === "TR" && item.closest("thead")) {
+              return false;
+            }
+            return !!$("a[href]", item);
+          } catch (e) {
+            console.warn("Error processing item:", e);
+            return false;
+          }
+        });
+      } catch (e) {
+        console.error("Error scanning items:", e);
+        return [];
+      }
     };
 
     const applyAll = async (root = document) => {
