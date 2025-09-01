@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DonghuaLife – Mark Watched Episodes (✅)
 // @namespace    us_dhl_seen
-// @version      2.0.0
+// @version      2.1.0
 // @description  Adds a button to mark watched episodes, syncs status across tabs, and provides data management tools.
 // @author       Aesthermortis
 // @match        *://*.donghualife.com/*
@@ -60,6 +60,7 @@
 
     // Defaults
     DEFAULT_ROW_HL: false,
+    DEFAULT_LANG: "en",
   };
 
   // --- Module: CSS Styles ---
@@ -153,6 +154,121 @@
     },
   };
 
+  // --- Module: I18n ---
+  const I18n = (() => {
+    const locales = {
+      en: {
+        // Buttons & Labels
+        seen: "Seen",
+        mark: "Mark",
+        accept: "Accept",
+        cancel: "Cancel",
+        close: "Close",
+        // Settings Menu
+        settingsTitle: "Script Settings",
+        enableHighlight: 'Enable "Seen" item highlight',
+        disableHighlight: 'Disable "Seen" item highlight',
+        resetDisplayPrefs: "Reset display preferences",
+        exportJson: "Export seen (JSON)",
+        importJson: "Import seen (JSON)",
+        resetAllData: "Reset all seen data",
+        // Toasts
+        toastErrorLoading: "Error loading user data.",
+        toastErrorSaving: "Error saving state.",
+        toastErrorExporting: "Error exporting data.",
+        toastErrorImporting: "Error: Invalid JSON data provided.",
+        toastErrorResetting: "Error resetting data.",
+        toastHighlightEnabled: "Row highlight enabled.",
+        toastHighlightDisabled: "Row highlight disabled.",
+        toastPrefsReset: "Display preferences have been reset.",
+        toastImportSuccess: "Successfully imported {count} records. Reloading...",
+        toastDataReset: "Data reset. Reloading...",
+        // Modals & Prompts
+        exportTitle: "Export Backup",
+        exportText: "Copy this text to save a backup of your seen episodes.",
+        importTitle: "Import Backup",
+        importText: "Paste the backup JSON you saved previously.",
+        confirmImportTitle: "Confirm Import",
+        confirmImportText:
+          "Found {count} records. This will overwrite your current data. Continue?",
+        confirmImportOk: "Yes, import",
+        resetConfirmTitle: "Confirm Reset",
+        resetConfirmText:
+          "Are you sure you want to delete all seen episode data? This cannot be undone.",
+        resetConfirmOk: "Yes, delete all",
+        // ARIA & Titles
+        fabTitle: "Script Settings",
+        fabAriaLabel: "Open userscript settings",
+        btnToggleSeen: "Toggle seen status",
+        btnTitleSeen: "Marked as seen. Click to unmark.",
+        btnTitleNotSeen: "Not seen. Click to mark.",
+      },
+      es: {
+        // Buttons & Labels
+        seen: "Visto",
+        mark: "Marcar",
+        accept: "Aceptar",
+        cancel: "Cancelar",
+        close: "Cerrar",
+        // Settings Menu
+        settingsTitle: "Configuración del Script",
+        enableHighlight: 'Activar resaltado de "Visto"',
+        disableHighlight: 'Desactivar resaltado de "Visto"',
+        resetDisplayPrefs: "Restablecer preferencias de visualización",
+        exportJson: "Exportar vistos (JSON)",
+        importJson: "Importar vistos (JSON)",
+        resetAllData: "Restablecer todos los datos",
+        // Toasts
+        toastErrorLoading: "Error al cargar los datos del usuario.",
+        toastErrorSaving: "Error al guardar el estado.",
+        toastErrorExporting: "Error al exportar los datos.",
+        toastErrorImporting: "Error: El formato JSON proporcionado no es válido.",
+        toastErrorResetting: "Error al restablecer los datos.",
+        toastHighlightEnabled: "Resaltado de fila activado.",
+        toastHighlightDisabled: "Resaltado de fila desactivado.",
+        toastPrefsReset: "Las preferencias de visualización han sido restablecidas.",
+        toastImportSuccess: "Se importaron {count} registros correctamente. Recargando...",
+        toastDataReset: "Datos restablecidos. Recargando...",
+        // Modals & Prompts
+        exportTitle: "Copia de Seguridad",
+        exportText: "Copia este texto para guardar una copia de seguridad de tus episodios vistos.",
+        importTitle: "Importar Copia de Seguridad",
+        importText: "Pega la copia de seguridad en formato JSON que guardaste.",
+        confirmImportTitle: "Confirmar Importación",
+        confirmImportText:
+          "Se encontraron {count} registros. Esto sobrescribirá tus datos actuales. ¿Continuar?",
+        confirmImportOk: "Sí, importar",
+        resetConfirmTitle: "Confirmar Restablecimiento",
+        resetConfirmText:
+          "Estás a punto de borrar todos los datos de episodios vistos. Esta acción no se puede deshacer.",
+        resetConfirmOk: "Sí, borrar todo",
+        // ARIA & Titles
+        fabTitle: "Configuración del Script",
+        fabAriaLabel: "Abrir la configuración del userscript",
+        btnToggleSeen: "Alternar estado de visto",
+        btnTitleSeen: "Marcado como visto. Haz clic para desmarcar.",
+        btnTitleNotSeen: "No visto. Haz clic para marcar.",
+      },
+    };
+
+    let currentTranslations = locales[Constants.DEFAULT_LANG];
+
+    const init = (lang) => {
+      const language = lang?.startsWith("es") ? "es" : "en";
+      currentTranslations = locales[language];
+    };
+
+    const t = (key, replacements = {}) => {
+      let translation = currentTranslations[key] || locales[Constants.DEFAULT_LANG][key] || key;
+      Object.entries(replacements).forEach(([placeholder, value]) => {
+        translation = translation.replace(`{${placeholder}}`, String(value));
+      });
+      return translation;
+    };
+
+    return { init, t };
+  })();
+
   // --- Module: DatabaseManager ---
   const DatabaseManager = (() => {
     let dbInstance = null;
@@ -231,7 +347,7 @@
         getToastContainer().appendChild(toast);
         setTimeout(() => toast.remove(), duration);
       },
-      showConfirm: ({ title, text, okLabel = "Accept", cancelLabel = "Cancel" }) =>
+      showConfirm: ({ title, text, okLabel = I18n.t("accept"), cancelLabel = I18n.t("cancel") }) =>
         new Promise((resolve) => {
           const modalHTML = `<div class="us-dhl-modal-header">${title}</div><div class="us-dhl-modal-body"><p>${text}</p></div><div class="us-dhl-modal-footer"><button class="us-dhl-modal-btn secondary">${cancelLabel}</button><button class="us-dhl-modal-btn primary">${okLabel}</button></div>`;
           const overlay = createModal(modalHTML);
@@ -244,7 +360,7 @@
           overlay.addEventListener("click", () => close(false));
           Utils.$(".us-dhl-modal", overlay).addEventListener("click", (e) => e.stopPropagation());
         }),
-      showPrompt: ({ title, text, okLabel = "Accept", cancelLabel = "Cancel" }) =>
+      showPrompt: ({ title, text, okLabel = I18n.t("accept"), cancelLabel = I18n.t("cancel") }) =>
         new Promise((resolve) => {
           const modalHTML = `<div class="us-dhl-modal-header">${title}</div><div class="us-dhl-modal-body"><p>${text}</p><textarea></textarea></div><div class="us-dhl-modal-footer"><button class="us-dhl-modal-btn secondary">${cancelLabel}</button><button class="us-dhl-modal-btn primary">${okLabel}</button></div>`;
           const overlay = createModal(modalHTML);
@@ -260,7 +376,9 @@
           input.focus();
         }),
       showExport: ({ title, text, data }) => {
-        const modalHTML = `<div class="us-dhl-modal-header">${title}</div><div class="us-dhl-modal-body"><p>${text}</p><textarea readonly></textarea></div><div class="us-dhl-modal-footer"><button class="us-dhl-modal-btn primary">Close</button></div>`;
+        const modalHTML = `<div class="us-dhl-modal-header">${title}</div><div class="us-dhl-modal-body"><p>${text}</p><textarea readonly></textarea></div><div class="us-dhl-modal-footer"><button class="us-dhl-modal-btn primary">${I18n.t(
+          "close",
+        )}</button></div>`;
         const overlay = createModal(modalHTML);
         const textarea = Utils.$("textarea", overlay);
         textarea.value = data;
@@ -343,6 +461,7 @@
         typeof state.prefs.rowHighlight === "boolean"
           ? state.prefs.rowHighlight
           : Constants.DEFAULT_ROW_HL,
+      getUserLang: () => state.prefs.userLang || navigator.language || Constants.DEFAULT_LANG,
       async load() {
         try {
           const [keys, rawPrefs] = await Promise.all([
@@ -354,7 +473,7 @@
           broadcast({ type: "INIT" });
         } catch (error) {
           console.error("[Store] Failed to load initial state:", error);
-          UIManager.showToast("Error loading user data.");
+          UIManager.showToast(I18n.t("toastErrorLoading"));
         }
       },
       async setSeen(id, seen = true) {
@@ -404,8 +523,8 @@
       return prefix + text.slice(0, 160);
     };
     const updateButtonState = (btn, isSeen) => {
-      btn.textContent = isSeen ? "Seen" : "Mark";
-      btn.title = isSeen ? "Marked as seen. Click to unmark." : "Not seen. Click to mark.";
+      btn.textContent = isSeen ? I18n.t("seen") : I18n.t("mark");
+      btn.title = isSeen ? I18n.t("btnTitleSeen") : I18n.t("btnTitleNotSeen");
       btn.setAttribute("aria-pressed", String(!!isSeen));
     };
     const setItemSeenState = (item, seen) => {
@@ -421,7 +540,7 @@
         ? `${Constants.BTN_CLASS} ${Constants.CARD_BTN_CLASS}`
         : Constants.BTN_CLASS;
       updateButtonState(btn, isSeen);
-      btn.setAttribute("aria-label", "Toggle seen status");
+      btn.setAttribute("aria-label", I18n.t("btnToggleSeen"));
       return btn;
     };
     const ensureTableControlColumn = (table) => {
@@ -486,9 +605,6 @@
       }
       setItemSeenState(item, isSeen);
     };
-    return { decorateItem, updateItemUI };
-
-    // Resets the visual state of a single decorated item.
     const resetItemUI = (item) => {
       if (!item || item.getAttribute(Constants.ITEM_SEEN_ATTR) !== "1") {
         return;
@@ -533,19 +649,19 @@
           exportObj[key] = allData[index];
         });
         UIManager.showExport({
-          title: "Export Backup",
-          text: "Copy this text to save a backup of your seen episodes.",
+          title: I18n.t("exportTitle"),
+          text: I18n.t("exportText"),
           data: JSON.stringify(exportObj, null, 2),
         });
       } catch (error) {
         console.error("Failed to export data:", error);
-        UIManager.showToast("Error exporting data.");
+        UIManager.showToast(I18n.t("toastErrorExporting"));
       }
     };
     const importJSON = async () => {
       const txt = await UIManager.showPrompt({
-        title: "Import Backup",
-        text: "Paste the backup JSON you saved previously.",
+        title: I18n.t("importTitle"),
+        text: I18n.t("importText"),
       });
       if (!txt) {
         return;
@@ -559,9 +675,9 @@
 
         const count = Object.keys(parsed).length;
         const confirmed = await UIManager.showConfirm({
-          title: "Confirm Import",
-          text: `Found ${count} records. This will overwrite your current data. Continue?`,
-          okLabel: "Yes, import",
+          title: I18n.t("confirmImportTitle"),
+          text: I18n.t("confirmImportText", { count }),
+          okLabel: I18n.t("confirmImportOk"),
         });
         if (!confirmed) {
           return;
@@ -578,18 +694,18 @@
           }
         }
         progress.close();
-        UIManager.showToast(`Successfully imported ${count} records. Reloading...`);
+        UIManager.showToast(I18n.t("toastImportSuccess", { count }));
         setTimeout(() => location.reload(), 1500);
       } catch (error) {
         console.error("Failed to import data:", error);
-        UIManager.showToast("Error: Invalid JSON data provided.");
+        UIManager.showToast(I18n.t("toastErrorImporting"));
       }
     };
     const resetAll = async () => {
       const confirmed = await UIManager.showConfirm({
-        title: "Confirm Reset",
-        text: "Are you sure you want to delete all seen episode data? This cannot be undone.",
-        okLabel: "Yes, delete all",
+        title: I18n.t("resetConfirmTitle"),
+        text: I18n.t("resetConfirmText"),
+        okLabel: I18n.t("resetConfirmOk"),
         isDestructive: true,
       });
       if (!confirmed) {
@@ -598,55 +714,55 @@
 
       try {
         await Store.clearSeen();
-        UIManager.showToast("Data reset. Reloading...");
+        UIManager.showToast(I18n.t("toastDataReset"));
         setTimeout(() => location.reload(), 1500);
       } catch (error) {
         console.error("Failed to reset data:", error);
-        UIManager.showToast("Error resetting data.");
+        UIManager.showToast(I18n.t("toastErrorResetting"));
       }
     };
     const openMenu = () => {
       const isHlOn = Store.isRowHighlightOn();
       const actions = [
         {
-          label: `${isHlOn ? "Disable" : "Enable"} "Seen" item highlight`,
-          title: "Toggles the green background for seen episode rows.",
+          label: isHlOn ? I18n.t("disableHighlight") : I18n.t("enableHighlight"),
           onClick: async () => {
             const { prefs } = Store.getState();
-            await Store.setPrefs({ ...prefs, rowHighlight: !isHlOn });
-            UIManager.showToast(`Row highlight ${!isHlOn ? "enabled" : "disabled"}.`);
+            const newHighlightState = !isHlOn;
+            await Store.setPrefs({ ...prefs, rowHighlight: newHighlightState });
+            UIManager.showToast(
+              newHighlightState
+                ? I18n.t("toastHighlightEnabled")
+                : I18n.t("toastHighlightDisabled"),
+            );
           },
         },
         {
-          label: "Reset display preferences",
-          title: "Resets all visual tweaks to their defaults.",
+          label: I18n.t("resetDisplayPrefs"),
           isDestructive: true,
           onClick: async () => {
             await Store.setPrefs({});
-            UIManager.showToast("Display preferences have been reset.");
+            UIManager.showToast(I18n.t("toastPrefsReset"));
           },
         },
         {
-          label: "Export seen (JSON)",
+          label: I18n.t("exportJson"),
           onClick: exportJSON,
           keepOpen: true,
-          title: "Generates a JSON backup of your data.",
         },
         {
-          label: "Import seen (JSON)",
+          label: I18n.t("importJson"),
           onClick: importJSON,
           keepOpen: true,
-          title: "Restores your data from a JSON backup.",
         },
         {
-          label: "Reset all seen data",
+          label: I18n.t("resetAllData"),
           onClick: resetAll,
           isDestructive: true,
           keepOpen: true,
-          title: "Warning: Deletes all your tracked episodes.",
         },
       ];
-      UIManager.showSettingsMenu({ title: "Script Settings", actions });
+      UIManager.showSettingsMenu({ title: I18n.t("settingsTitle"), actions });
     };
     const createButton = () => {
       if (Utils.$(`.${Constants.FAB_CLASS}`)) {
@@ -654,8 +770,8 @@
       }
       const fab = document.createElement("button");
       fab.className = Constants.FAB_CLASS;
-      fab.title = "Script Settings";
-      fab.setAttribute("aria-label", "Open userscript settings");
+      fab.title = I18n.t("fabTitle");
+      fab.setAttribute("aria-label", I18n.t("fabAriaLabel"));
       fab.innerHTML =
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.44,0.17-0.48,0.41L9.22,5.72C8.63,5.96,8.1,6.29,7.6,6.67L5.22,5.71C5,5.64,4.75,5.7,4.63,5.92L2.71,9.24 c-0.12,0.2-0.07,0.47,0.12,0.61l2.03,1.58C4.8,11.66,4.78,11.98,4.78,12.3c0,0.32,0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.38,2.91 c0.04,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.48,0.41l0.38-2.91c0.59-0.24,1.12-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0.02,0.59-0.22l1.92-3.32c0.12-0.2,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>';
       fab.addEventListener("click", openMenu);
@@ -670,11 +786,9 @@
 
     const applyAll = (root = document) => {
       const items = Utils.$$(Constants.EPISODE_ITEM_SELECTOR, root).filter((item) => {
-        // Exclude table headers
         if (item.tagName === "TR" && item.closest("thead")) {
           return false;
         }
-        // Ensure it contains a link to be a valid item
         return !!Utils.$(Constants.EPISODE_LINK_SELECTOR, item);
       });
 
@@ -689,8 +803,7 @@
         }
       } catch (error) {
         console.error("Failed to update seen status:", error);
-        UIManager.showToast("Error saving state.");
-        // Revert UI change on failure
+        UIManager.showToast(I18n.t("toastErrorSaving"));
         Store.receiveSync(id, !seen);
       }
     };
@@ -729,7 +842,6 @@
             return;
           }
 
-          // For primary, unmodified clicks, mark as seen then navigate.
           const isPrimaryClick =
             e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
           if (isPrimaryClick && link.target !== "_blank") {
@@ -737,7 +849,6 @@
             await handleToggle(url.pathname, true);
             location.href = url.href;
           } else {
-            // For other clicks (middle, ctrl+click), mark in the background.
             handleToggle(url.pathname, true);
           }
         },
@@ -753,19 +864,21 @@
             Constants.ROOT_HL_CLASS,
             Store.isRowHighlightOn(),
           );
+
+          if (change.payload?.userLang) {
+            location.reload();
+          }
           break;
         case "SEEN_CHANGE":
           EpisodeMarker.updateItemUI(change.payload.id);
           break;
         case "CLEAR_SEEN":
-          // This will be followed by a reload, but we can clear the current view.
           Utils.$$(`[${Constants.ITEM_SEEN_ATTR}]`).forEach(EpisodeMarker.resetItemUI);
           break;
       }
     };
 
     const init = async () => {
-      // Wait for body to ensure all modules can interact with the DOM.
       if (!document.body) {
         await new Promise((resolve) => {
           const obs = new MutationObserver(() => {
@@ -781,17 +894,15 @@
       UIManager.injectCSS();
       Store.subscribe(handleStateChange);
       await Store.load();
+      I18n.init(Store.getUserLang());
 
       Settings.createButton();
       setupSyncChannel();
       setupGlobalClickListener();
 
-      // Initial decoration of items present on page load.
       applyAll();
-      // Observe for dynamically loaded content.
       DOMObserver.observe(() => applyAll());
 
-      // Auto-mark the current episode page if it's not already marked.
       const currentPath = location.pathname;
       if (Utils.isEpisodePathname(currentPath) && !Store.isSeen(currentPath)) {
         handleToggle(currentPath, true);
@@ -802,7 +913,6 @@
   })();
 
   // --- Entry Point ---
-  // MDN Reference: https://developer.mozilla.org/en-US/docs/Web/API/Document/readyState
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", AppController.init);
   } else {
