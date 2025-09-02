@@ -166,6 +166,8 @@
         close: "Close",
         // Settings Menu
         settingsTitle: "Script Settings",
+        changeLanguage: "Change Language",
+        selectLanguage: "Select Language",
         enableHighlight: 'Enable "Seen" item highlight',
         disableHighlight: 'Disable "Seen" item highlight',
         resetDisplayPrefs: "Reset display preferences",
@@ -181,6 +183,7 @@
         toastHighlightEnabled: "Row highlight enabled.",
         toastHighlightDisabled: "Row highlight disabled.",
         toastPrefsReset: "Display preferences have been reset.",
+        toastLangChanged: "Language changed. Reloading...",
         toastImportSuccess: "Successfully imported {count} records. Reloading...",
         toastDataReset: "Data reset. Reloading...",
         // Modals & Prompts
@@ -212,6 +215,8 @@
         close: "Cerrar",
         // Settings Menu
         settingsTitle: "Configuración del Script",
+        changeLanguage: "Cambiar Idioma",
+        selectLanguage: "Seleccionar Idioma",
         enableHighlight: 'Activar resaltado de "Visto"',
         disableHighlight: 'Desactivar resaltado de "Visto"',
         resetDisplayPrefs: "Restablecer preferencias de visualización",
@@ -227,6 +232,7 @@
         toastHighlightEnabled: "Resaltado de fila activado.",
         toastHighlightDisabled: "Resaltado de fila desactivado.",
         toastPrefsReset: "Las preferencias de visualización han sido restablecidas.",
+        toastLangChanged: "Idioma cambiado. Recargando...",
         toastImportSuccess: "Se importaron {count} registros correctamente. Recargando...",
         toastDataReset: "Datos restablecidos. Recargando...",
         // Modals & Prompts
@@ -266,7 +272,7 @@
       return translation;
     };
 
-    return { init, t };
+    return { init, t, locales };
   })();
 
   // --- Module: DatabaseManager ---
@@ -470,7 +476,7 @@
           ]);
           state.seenSet = new Set(keys);
           state.prefs = JSON.parse(rawPrefs);
-          broadcast({ type: "INIT" });
+          broadcast({ type: "INIT", payload: { oldPrefs: {}, newPrefs: state.prefs } });
         } catch (error) {
           console.error("[Store] Failed to load initial state:", error);
           UIManager.showToast(I18n.t("toastErrorLoading"));
@@ -487,9 +493,10 @@
         broadcast({ type: "SEEN_CHANGE", payload: { id, seen } });
       },
       async setPrefs(newPrefs) {
+        const oldPrefs = { ...state.prefs };
         state.prefs = newPrefs;
         await GM.setValue(Constants.PREFS_KEY, JSON.stringify(newPrefs));
-        broadcast({ type: "PREFS_CHANGE", payload: newPrefs });
+        broadcast({ type: "PREFS_CHANGE", payload: { oldPrefs, newPrefs } });
       },
       receiveSync(id, seen) {
         if (seen) {
@@ -721,9 +728,37 @@
         UIManager.showToast(I18n.t("toastErrorResetting"));
       }
     };
+
+    const openLanguageMenu = () => {
+      const langActions = [
+        {
+          label: "English",
+          onClick: () => changeLanguage("en"),
+        },
+        {
+          label: "Español",
+          onClick: () => changeLanguage("es"),
+        },
+      ];
+      UIManager.showSettingsMenu({
+        title: I18n.t("selectLanguage"),
+        actions: langActions,
+      });
+    };
+
+    const changeLanguage = async (lang) => {
+      const { prefs } = Store.getState();
+      await Store.setPrefs({ ...prefs, userLang: lang });
+    };
+
     const openMenu = () => {
       const isHlOn = Store.isRowHighlightOn();
       const actions = [
+        {
+          label: I18n.t("changeLanguage"),
+          onClick: openLanguageMenu,
+          keepOpen: true,
+        },
         {
           label: isHlOn ? I18n.t("disableHighlight") : I18n.t("enableHighlight"),
           onClick: async () => {
@@ -858,17 +893,33 @@
 
     const handleStateChange = (change) => {
       switch (change.type) {
-        case "INIT":
-        case "PREFS_CHANGE":
+        case "INIT": {
           document.documentElement.classList.toggle(
             Constants.ROOT_HL_CLASS,
             Store.isRowHighlightOn(),
           );
+          break;
+        }
 
-          if (change.payload?.userLang) {
-            location.reload();
+        case "PREFS_CHANGE": {
+          const { oldPrefs, newPrefs } = change.payload;
+          const highlightChanged = oldPrefs.rowHighlight !== newPrefs.rowHighlight;
+          const langChanged = oldPrefs.userLang !== newPrefs.userLang;
+
+          if (highlightChanged) {
+            document.documentElement.classList.toggle(
+              Constants.ROOT_HL_CLASS,
+              Store.isRowHighlightOn(),
+            );
+          }
+
+          if (langChanged) {
+            UIManager.showToast(I18n.t("toastLangChanged"));
+            setTimeout(() => location.reload(), 1500);
           }
           break;
+        }
+
         case "SEEN_CHANGE":
           EpisodeMarker.updateItemUI(change.payload.id);
           break;
@@ -890,6 +941,8 @@
           obs.observe(document.documentElement, { childList: true });
         });
       }
+
+      I18n.init(navigator.language);
 
       UIManager.injectCSS();
       Store.subscribe(handleStateChange);
