@@ -21,7 +21,10 @@
 (() => {
   "use strict";
 
-  // --- Module: Constants ---
+  /**
+   * @module Constants
+   * @description Defines all the constants used throughout the script.
+   */
   const Constants = {
     // Storage and Sync
     PREFS_KEY: "us-dhl:prefs:v1",
@@ -63,7 +66,10 @@
     DEFAULT_LANG: "en",
   };
 
-  // --- Module: CSS Styles ---
+  /**
+   * @module CSS
+   * @description Contains all the CSS styles injected into the page.
+   */
   const CSS = `
     /* Base Button Style */
     .${Constants.BTN_CLASS}{
@@ -135,7 +141,10 @@
     .us-dhl-progress {width: 100%; margin-top: 8px;}
   `;
 
-  // --- Module: Utilities ---
+  /**
+   * @module Utils
+   * @description Provides utility functions for DOM manipulation and data parsing.
+   */
   const Utils = {
     $: (sel, root = document) => root.querySelector(sel),
     $$: (sel, root = document) => Array.from(root.querySelectorAll(sel)),
@@ -154,7 +163,10 @@
     },
   };
 
-  // --- Module: I18n ---
+  /**
+   * @module I18n
+   * @description Handles internationalization and provides translation strings.
+   */
   const I18n = (() => {
     const locales = {
       en: {
@@ -275,7 +287,10 @@
     return { init, t, locales };
   })();
 
-  // --- Module: DatabaseManager ---
+  /**
+   * @module DatabaseManager
+   * @description Handles all interactions with the IndexedDB.
+   */
   const DatabaseManager = (() => {
     let dbInstance = null;
     const openDB = () => {
@@ -317,7 +332,10 @@
     };
   })();
 
-  // --- Module: UIManager ---
+  /**
+   * @module UIManager
+   * @description Handles all direct DOM manipulations for UI elements like toasts and modals.
+   */
   const UIManager = (() => {
     const getToastContainer = () => {
       let container = Utils.$("#us-dhl-toast-container");
@@ -441,7 +459,10 @@
     };
   })();
 
-  // --- Module: Store ---
+  /**
+   * @module Store
+   * @description Manages the application's state, including seen/watching sets and preferences.
+   */
   const Store = (() => {
     const state = {
       seenSet: new Set(),
@@ -514,7 +535,10 @@
     };
   })();
 
-  // --- Module: EpisodeMarker ---
+  /**
+   * @module EpisodeMarker
+   * @description Marks episodes as seen or unseen.
+   */
   const EpisodeMarker = (() => {
     const computeId = (element) => {
       const link = Utils.$(Constants.EPISODE_LINK_SELECTOR, element);
@@ -626,7 +650,10 @@
     return { decorateItem, updateItemUI, resetItemUI };
   })();
 
-  // --- Module: DOMObserver ---
+  /**
+   * @module DOMObserver
+   * @description Observes the DOM for changes and triggers callbacks.
+   */
   const DOMObserver = (() => {
     let observer = null;
     const observe = (callback) => {
@@ -645,7 +672,10 @@
     return { observe };
   })();
 
-  // --- Module: Settings ---
+  /**
+   * @module Settings
+   * @description Manages the settings menu and its actions (import, export, etc.).
+   */
   const Settings = (() => {
     const exportJSON = async () => {
       try {
@@ -815,7 +845,10 @@
     return { createButton };
   })();
 
-  // --- Module: AppController ---
+  /**
+   * @module AppController
+   * @description The main controller that orchestrates the entire script.
+   */
   const AppController = (() => {
     let syncChannel = null;
 
