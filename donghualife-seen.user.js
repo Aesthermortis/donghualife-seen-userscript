@@ -30,8 +30,10 @@
     PREFS_KEY: "us-dhl:prefs:v1",
     SYNC_CHANNEL_NAME: "us-dhl-sync:v1",
     DB_NAME: "donghualife-seen-db",
-    DB_STORE_NAME: "seenEpisodes",
-    DB_VERSION: 1,
+    DB_VERSION: 2,
+    DB_STORE_SEEN: "seenEpisodes",
+    DB_STORE_WATCHING: "watchingItems",
+    DB_STORE_COMPLETED: "completedItems",
 
     // DOM Attributes and Classes
     ITEM_SEEN_ATTR: "data-us-dhl-decorated",
@@ -297,25 +299,41 @@
       if (dbInstance) {
         return Promise.resolve(dbInstance);
       }
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.open(Constants.DB_NAME, Constants.DB_VERSION);
-        request.onerror = (event) => reject(event.target.error);
-        request.onsuccess = (event) => {
-          dbInstance = event.target.result;
-          resolve(dbInstance);
-        };
-        request.onupgradeneeded = (event) => {
-          const db = event.target.result;
-          if (!db.objectStoreNames.contains(Constants.DB_STORE_NAME)) {
-            db.createObjectStore(Constants.DB_STORE_NAME);
-          }
-        };
+      const tryOpen = (version) =>
+        new Promise((resolve, reject) => {
+          const request =
+            version !== null
+              ? indexedDB.open(Constants.DB_NAME, version)
+              : indexedDB.open(Constants.DB_NAME);
+          request.onerror = (event) => reject(event.target.error);
+          request.onsuccess = (event) => {
+            dbInstance = event.target.result;
+            resolve(dbInstance);
+          };
+          request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(Constants.DB_STORE_SEEN)) {
+              db.createObjectStore(Constants.DB_STORE_SEEN);
+            }
+            if (!db.objectStoreNames.contains(Constants.DB_STORE_WATCHING)) {
+              db.createObjectStore(Constants.DB_STORE_WATCHING);
+            }
+            if (!db.objectStoreNames.contains(Constants.DB_STORE_COMPLETED)) {
+              db.createObjectStore(Constants.DB_STORE_COMPLETED);
+            }
+          };
+        });
+      return tryOpen(Constants.DB_VERSION).catch((err) => {
+        if (String(err?.name) === "VersionError") {
+          return tryOpen(null);
+        }
+        throw err;
       });
     };
-    const perform = async (mode, operation) => {
+    const perform = async (storeName, mode, operation) => {
       const db = await openDB();
-      const tx = db.transaction(Constants.DB_STORE_NAME, mode);
-      const store = tx.objectStore(Constants.DB_STORE_NAME);
+      const tx = db.transaction(storeName, mode);
+      const store = tx.objectStore(storeName);
       return new Promise((resolve, reject) => {
         const request = operation(store);
         request.onerror = (event) => reject(event.target.error);
@@ -323,12 +341,11 @@
       });
     };
     return {
-      set: (key, value) => perform("readwrite", (s) => s.put(value, key)),
-      get: (key) => perform("readonly", (s) => s.get(key)),
-      delete: (key) => perform("readwrite", (s) => s.delete(key)),
-      clear: () => perform("readwrite", (s) => s.clear()),
-      getAll: () => perform("readonly", (s) => s.getAll()),
-      getAllKeys: () => perform("readonly", (s) => s.getAllKeys()),
+      set: (store, key, value) => perform(store, "readwrite", (s) => s.put(value, key)),
+      delete: (store, key) => perform(store, "readwrite", (s) => s.delete(key)),
+      clear: (store) => perform(store, "readwrite", (s) => s.clear()),
+      getAll: (store) => perform(store, "readonly", (s) => s.getAll()),
+      getAllKeys: (store) => perform(store, "readonly", (s) => s.getAllKeys()),
     };
   })();
 
