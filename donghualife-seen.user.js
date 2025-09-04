@@ -150,6 +150,38 @@
   const Utils = {
     $: (sel, root = document) => root.querySelector(sel),
     $$: (sel, root = document) => Array.from(root.querySelectorAll(sel)),
+    slugToTitle: (slug) => slug.replace(/[-_]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()),
+    getHierarchyFromEpisodePath: (p) => {
+      try {
+        const m = p.match(/^\/episode\/(.+?)-(\d+)-/i);
+        if (!m) {
+          return { seasonId: null, seriesId: null };
+        }
+        const slug = m[1];
+        const num = m[2];
+        return { seasonId: `/season/${slug}-${num}`, seriesId: `/series/${slug}` };
+      } catch {
+        return { seasonId: null, seriesId: null };
+      }
+    },
+    getSeriesTitleFromElement: (root) => {
+      const cands = [
+        ".page-title",
+        "h1.title",
+        "h1",
+        ".entry-title",
+        ".titulo",
+        ".title",
+        "header h1",
+      ];
+      for (const sel of cands) {
+        const t = root.querySelector(sel)?.textContent?.trim();
+        if (t) {
+          return t;
+        }
+      }
+      return null;
+    },
     debounce: (fn, ms) => {
       let timeoutId;
       return (...args) => {
