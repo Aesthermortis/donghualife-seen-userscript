@@ -483,6 +483,8 @@
   const Store = (() => {
     const state = {
       seenSet: new Set(),
+      watchingSet: new Set(),
+      completedSet: new Set(),
       prefs: {},
     };
     const listeners = [];
@@ -508,11 +510,15 @@
       getUserLang: () => state.prefs.userLang || navigator.language || Constants.DEFAULT_LANG,
       async load() {
         try {
-          const [keys, rawPrefs] = await Promise.all([
-            DatabaseManager.getAllKeys(),
+          const [seenKeys, watchingKeys, completedKeys, rawPrefs] = await Promise.all([
+            DatabaseManager.getAllKeys(Constants.DB_STORE_SEEN),
+            DatabaseManager.getAllKeys(Constants.DB_STORE_WATCHING),
+            DatabaseManager.getAllKeys(Constants.DB_STORE_COMPLETED),
             GM.getValue(Constants.PREFS_KEY, "{}"),
           ]);
-          state.seenSet = new Set(keys);
+          state.seenSet = new Set(seenKeys);
+          state.watchingSet = new Set(watchingKeys);
+          state.completedSet = new Set(completedKeys);
           state.prefs = JSON.parse(rawPrefs);
           broadcast({ type: "INIT", payload: { oldPrefs: {}, newPrefs: state.prefs } });
         } catch (error) {
@@ -521,14 +527,35 @@
         }
       },
       async setSeen(id, seen = true) {
-        if (seen) {
-          state.seenSet.add(id);
-          await DatabaseManager.set(id, { t: Date.now() });
-        } else {
-          state.seenSet.delete(id);
-          await DatabaseManager.delete(id);
+        await DatabaseManager[seen ? "set" : "delete"](Constants.DB_STORE_SEEN, id, {
+          t: Date.now(),
+        });
+        state.seenSet[seen ? "add" : "delete"](id);
+        broadcast({ type: "SEEN_CHANGE", payload: { id } });
+      },
+      async setWatching(id, watching = true) {
+        await DatabaseManager[watching ? "set" : "delete"](Constants.DB_STORE_WATCHING, id, {
+          t: Date.now(),
+        });
+        state.watchingSet[watching ? "add" : "delete"](id);
+        if (watching && state.completedSet.has(id)) {
+          await DatabaseManager.delete(Constants.DB_STORE_COMPLETED, id);
+          state.completedSet.delete(id);
+          broadcast({ type: "COMPLETED_CHANGE", payload: { id } });
         }
-        broadcast({ type: "SEEN_CHANGE", payload: { id, seen } });
+        broadcast({ type: "WATCHING_CHANGE", payload: { id } });
+      },
+      async setCompleted(id, completed = true) {
+        await DatabaseManager[completed ? "set" : "delete"](Constants.DB_STORE_COMPLETED, id, {
+          t: Date.now(),
+        });
+        state.completedSet[completed ? "add" : "delete"](id);
+        if (completed && state.watchingSet.has(id)) {
+          await DatabaseManager.delete(Constants.DB_STORE_WATCHING, id);
+          state.watchingSet.delete(id);
+          broadcast({ type: "WATCHING_CHANGE", payload: { id } });
+        }
+        broadcast({ type: "COMPLETED_CHANGE", payload: { id } });
       },
       async setPrefs(newPrefs) {
         const oldPrefs = { ...state.prefs };
@@ -544,10 +571,34 @@
         }
         broadcast({ type: "SEEN_CHANGE", payload: { id, seen } });
       },
-      async clearSeen() {
+      async clearAllData() {
         state.seenSet.clear();
-        await DatabaseManager.clear();
-        broadcast({ type: "CLEAR_SEEN" });
+        state.watchingSet.clear();
+        state.completedSet.clear();
+        await Promise.all([
+          DatabaseManager.clear(Constants.DB_STORE_SEEN),
+          DatabaseManager.clear(Constants.DB_STORE_WATCHING),
+          DatabaseManager.clear(Constants.DB_STORE_COMPLETED),
+        ]);
+        broadcast({ type: "CLEAR_ALL" });
+      },
+      async exportData() {
+        const [seenKeys, watchingKeys, completedKeys] = await Promise.all([
+          DatabaseManager.getAllKeys(Constants.DB_STORE_SEEN),
+          DatabaseManager.getAllKeys(Constants.DB_STORE_WATCHING),
+          DatabaseManager.getAllKeys(Constants.DB_STORE_COMPLETED),
+        ]);
+        const [seenVals, watchingVals, completedVals] = await Promise.all([
+          DatabaseManager.getAll(Constants.DB_STORE_SEEN),
+          DatabaseManager.getAll(Constants.DB_STORE_WATCHING),
+          DatabaseManager.getAll(Constants.DB_STORE_COMPLETED),
+        ]);
+        const zip = (keys, vals) => keys.reduce((acc, k, i) => ((acc[k] = vals[i]), acc), {});
+        return {
+          seen: zip(seenKeys, seenVals),
+          watching: zip(watchingKeys, watchingVals),
+          completed: zip(completedKeys, completedVals),
+        };
       },
     };
   })();
