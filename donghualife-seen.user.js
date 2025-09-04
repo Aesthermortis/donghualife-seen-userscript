@@ -38,13 +38,20 @@
     // DOM Attributes and Classes
     ITEM_SEEN_ATTR: "data-us-dhl-decorated",
     ITEM_SEEN_STATE_ATTR: "data-us-dhl-seen-state",
+    ITEM_DECORATED_ATTR: "data-us-dhl-decorated-type",
+    ITEM_STATE_ATTR: "data-us-dhl-state",
     TABLE_MARK_ATTR: "data-us-dhl-ctrlcol",
     BTN_CLASS: "us-dhl-seen-btn",
+    BTN_TYPE_ATTR: "data-us-dhl-btn-type",
     CARD_BTN_CLASS: "us-dhl-card-btn",
     ITEM_SEEN_CLASS: "us-dhl-item-seen",
+    ITEM_WATCHING_CLASS: "us-dhl-item-watching",
+    ITEM_COMPLETED_CLASS: "us-dhl-item-completed",
     ROOT_HL_CLASS: "us-dhl-rowhl-on",
     CTRL_CELL_CLASS: "us-dhl-ctrlcol",
     FAB_CLASS: "us-dhl-fab",
+    KIND_ATTR: "data-us-dhl-kind",
+    BTN_TYPE_ATTR: "data-us-dhl-btn-type",
 
     // Selectors
     EPISODE_ITEM_SELECTOR: "table tr, .views-row .episode",
