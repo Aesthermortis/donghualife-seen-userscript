@@ -643,121 +643,6 @@
   })();
 
   /**
-   * @module EpisodeMarker
-   * @description Marks episodes as seen or unseen.
-   */
-  const EpisodeMarker = (() => {
-    const computeId = (element) => {
-      const link = Utils.$(Constants.EPISODE_LINK_SELECTOR, element);
-      if (link?.href) {
-        try {
-          return new URL(link.href, location.origin).pathname;
-        } catch (e) {
-          console.warn("Invalid URL found, falling back to text.", link.href, e);
-        }
-      }
-      const text = (element.textContent || "").replace(/\s+/g, " ").trim();
-      const prefix = element.tagName === "TR" ? "row:" : "item:";
-      return prefix + text.slice(0, 160);
-    };
-    const updateButtonState = (btn, isSeen) => {
-      btn.textContent = isSeen ? I18n.t("seen") : I18n.t("mark");
-      btn.title = isSeen ? I18n.t("btnTitleSeen") : I18n.t("btnTitleNotSeen");
-      btn.setAttribute("aria-pressed", String(!!isSeen));
-    };
-    const setItemSeenState = (item, seen) => {
-      if (item) {
-        item.classList.toggle(Constants.ITEM_SEEN_CLASS, !!seen);
-        item.setAttribute(Constants.ITEM_SEEN_STATE_ATTR, seen ? "1" : "0");
-      }
-    };
-    const makeSeenButton = (isSeen, isCard) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = isCard
-        ? `${Constants.BTN_CLASS} ${Constants.CARD_BTN_CLASS}`
-        : Constants.BTN_CLASS;
-      updateButtonState(btn, isSeen);
-      btn.setAttribute("aria-label", I18n.t("btnToggleSeen"));
-      return btn;
-    };
-    const ensureTableControlColumn = (table) => {
-      if (!table || table.getAttribute(Constants.TABLE_MARK_ATTR) === "1") {
-        return;
-      }
-      if (table.tHead?.rows?.length) {
-        const th = document.createElement("th");
-        th.className = Constants.CTRL_CELL_CLASS;
-        table.tHead.rows[0].appendChild(th);
-      }
-      table.setAttribute(Constants.TABLE_MARK_ATTR, "1");
-    };
-    const getButtonContainer = (item) => {
-      if (item.tagName === "TR") {
-        const table = item.closest("table");
-        ensureTableControlColumn(table);
-        let cell = item.querySelector(`td.${Constants.CTRL_CELL_CLASS}`);
-        if (!cell) {
-          cell = document.createElement("td");
-          cell.className = Constants.CTRL_CELL_CLASS;
-          item.appendChild(cell);
-        }
-        return cell;
-      }
-      return item; // For cards, append directly.
-    };
-    const decorateItem = (item, onToggle) => {
-      if (item.getAttribute(Constants.ITEM_SEEN_ATTR) === "1") {
-        return;
-      }
-      item.setAttribute(Constants.ITEM_SEEN_ATTR, "1");
-
-      const id = computeId(item);
-      if (!id) {
-        return;
-      }
-
-      const isSeen = Store.isSeen(id);
-      setItemSeenState(item, isSeen);
-
-      const isCard = item.matches(".views-row .episode");
-      const controlContainer = getButtonContainer(item);
-      const btn = makeSeenButton(isSeen, isCard);
-      controlContainer.appendChild(btn);
-
-      btn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        onToggle(id, !Store.isSeen(id));
-      });
-    };
-    const updateItemUI = (id) => {
-      const item = Utils.$$(`[${Constants.ITEM_SEEN_ATTR}]`).find((el) => computeId(el) === id);
-      if (!item) {
-        return;
-      }
-
-      const isSeen = Store.isSeen(id);
-      const btn = Utils.$(`.${Constants.BTN_CLASS}`, item);
-      if (btn) {
-        updateButtonState(btn, isSeen);
-      }
-      setItemSeenState(item, isSeen);
-    };
-    const resetItemUI = (item) => {
-      if (!item || item.getAttribute(Constants.ITEM_SEEN_ATTR) !== "1") {
-        return;
-      }
-      setItemSeenState(item, false);
-      const btn = Utils.$(`.${Constants.BTN_CLASS}`, item);
-      if (btn) {
-        updateButtonState(btn, false);
-      }
-    };
-
-    return { decorateItem, updateItemUI, resetItemUI };
-  })();
-
-  /**
    * @module ContentDecorator
    * @description Unified decorator for episode, season, and series items.
    */
@@ -1177,7 +1062,14 @@
         return !!Utils.$(Constants.EPISODE_LINK_SELECTOR, item);
       });
 
-      items.forEach((item) => EpisodeMarker.decorateItem(item, handleToggle));
+      items.forEach((item) =>
+        ContentDecorator.decorateItem(item, {
+          type: "seen",
+          selector: Constants.EPISODE_LINK_SELECTOR,
+          onToggle: handleToggle,
+          isSetFn: Store.isSeen,
+        }),
+      );
     };
 
     const handleToggle = async (id, seen) => {
@@ -1271,10 +1163,13 @@
         }
 
         case "SEEN_CHANGE":
-          EpisodeMarker.updateItemUI(change.payload.id);
+          ContentDecorator.updateItemUI(change.payload.id, {
+            type: "seen",
+            isSetFn: Store.isSeen,
+          });
           break;
         case "CLEAR_SEEN":
-          Utils.$$(`[${Constants.ITEM_SEEN_ATTR}]`).forEach(EpisodeMarker.resetItemUI);
+          Utils.$$(`[${Constants.ITEM_SEEN_ATTR}]`).forEach(ContentDecorator.resetItemUI);
           break;
       }
     };
