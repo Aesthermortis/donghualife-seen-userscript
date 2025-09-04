@@ -758,6 +758,216 @@
   })();
 
   /**
+   * @module ContentDecorator
+   * @description Unified decorator for episode, season, and series items.
+   */
+  const ContentDecorator = (() => {
+    /**
+     * Computes the unique ID for the given item.
+     * Supports different strategies based on the target type.
+     */
+    const computeId = (element, selector, preferKind = null) => {
+      let link = null;
+      if (preferKind === "season") {
+        link = Utils.$("a[href^='/season/']", element) || null;
+      } else if (preferKind === "series") {
+        link = Utils.$("a[href^='/series/']", element) || null;
+      } else {
+        link =
+          Utils.$("a[href^='/season/']", element) ||
+          Utils.$("a[href^='/series/']", element) ||
+          null;
+      }
+      if (!link) {
+        link = Utils.$(selector, element);
+      }
+      if (!link?.href) {
+        return null;
+      }
+      try {
+        return new URL(link.href, location.origin).pathname;
+      } catch {
+        return null;
+      }
+    };
+
+    /**
+     * Updates the button text, ARIA, and state based on type and logical status.
+     */
+    const updateButtonState = (btn, type, status) => {
+      let textKey;
+      let titleKey;
+      let ariaLabelKey;
+
+      if (type === "seen") {
+        const isSet = status === "seen";
+        textKey = isSet ? "seen" : "mark";
+        titleKey = isSet ? "btnTitleSeen" : "btnTitleNotSeen";
+        ariaLabelKey = "btnToggleSeen";
+        btn.setAttribute("aria-pressed", String(isSet));
+      } else {
+        switch (status) {
+          case Constants.STATE_COMPLETED:
+            textKey = "completed";
+            titleKey = "btnTitleCompleted";
+            break;
+          case Constants.STATE_WATCHING:
+            textKey = "watching";
+            titleKey = "btnTitleWatching";
+            break;
+          default:
+            textKey = "mark";
+            titleKey = "btnTitleNotWatching";
+        }
+        ariaLabelKey = "btnToggleWatching";
+      }
+
+      btn.textContent = I18n.t(textKey);
+      btn.title = I18n.t(titleKey);
+      btn.setAttribute("aria-label", I18n.t(ariaLabelKey));
+      btn.setAttribute(Constants.ITEM_STATE_ATTR, status);
+    };
+
+    /**
+     * Creates and returns a state button for the given type and status.
+     */
+    const makeButton = (type, status, isCard) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = isCard
+        ? `${Constants.BTN_CLASS} ${Constants.CARD_BTN_CLASS}`
+        : Constants.BTN_CLASS;
+      b.setAttribute(Constants.BTN_TYPE_ATTR, type);
+      updateButtonState(b, type, status);
+      return b;
+    };
+
+    /**
+     * Adds control column to a table if not present.
+     */
+    const prepareTable = (table) => {
+      if (!table || table.hasAttribute(Constants.TABLE_MARK_ATTR)) {
+        return;
+      }
+      const headerRow = table.tHead?.rows?.[0];
+      if (headerRow) {
+        const th = document.createElement("th");
+        th.className = Constants.CTRL_CELL_CLASS;
+        headerRow.appendChild(th);
+      }
+      table.setAttribute(Constants.TABLE_MARK_ATTR, "1");
+    };
+
+    /**
+     * Returns the td container to insert the button in a table row.
+     */
+    const getButtonContainerForRow = (row) => {
+      const c = document.createElement("td");
+      c.className = Constants.CTRL_CELL_CLASS;
+      row.appendChild(c);
+      return c;
+    };
+
+    /**
+     * Applies or removes visual classes for state.
+     */
+    const updateItem = (item, type, status) => {
+      if (type === "seen") {
+        item.classList.toggle(Constants.ITEM_SEEN_CLASS, status === "seen");
+      } else {
+        item.classList.toggle(Constants.ITEM_WATCHING_CLASS, status === Constants.STATE_WATCHING);
+        item.classList.toggle(Constants.ITEM_COMPLETED_CLASS, status === Constants.STATE_COMPLETED);
+      }
+      const btn =
+        item.querySelector(`.${Constants.BTN_CLASS}[${Constants.BTN_TYPE_ATTR}="${type}"]`) ||
+        item.querySelector(`.${Constants.BTN_CLASS}`);
+      if (btn) {
+        updateButtonState(btn, type, status);
+      }
+    };
+
+    /**
+     * Decorates the item (row or card) with the button and state.
+     */
+    const decorateItem = (
+      item,
+      { type, selector, onToggle, isSetFn, getStatusFn, preferKind = null },
+    ) => {
+      if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === type) {
+        return;
+      }
+      // Store kind if relevant
+      if (type === "series" && preferKind) {
+        item.setAttribute(Constants.KIND_ATTR, preferKind);
+      }
+
+      const id = computeId(item, selector, type === "series" ? preferKind : null);
+      if (!id) {
+        return;
+      }
+
+      item.setAttribute(Constants.ITEM_DECORATED_ATTR, type);
+
+      let status;
+      if (type === "seen") {
+        status = isSetFn(id) ? "seen" : "unseen";
+      } else {
+        // For series/seasons, status is based on logical state
+        // Not implemented until main flow uses this decorator
+        status = Constants.STATE_UNTRACKED;
+      }
+
+      updateItem(item, type, status);
+
+      const isCard = !item.matches("tr");
+      const btn = makeButton(type, status, isCard);
+
+      let container = item;
+      if (!isCard) {
+        const table = item.closest("table");
+        prepareTable(table);
+        container = getButtonContainerForRow(item);
+      }
+      if (isCard) {
+        const cs = window.getComputedStyle(container);
+        if (cs.position === "static") {
+          container.style.position = "relative";
+        }
+      }
+      container.appendChild(btn);
+
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const currentStatus = btn.getAttribute(Constants.ITEM_STATE_ATTR);
+        onToggle(type, id, currentStatus, item);
+      });
+    };
+
+    /**
+     * Refreshes UI for the given id.
+     */
+    const updateItemUI = (id, { isSetFn, getStatusFn, type }) => {
+      for (const item of Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="${type}"]`)) {
+        const preferKind = type === "series" ? item.getAttribute(Constants.KIND_ATTR) : null;
+        const matchesId = computeId(item, Constants.LINK_SELECTOR, preferKind) === id;
+        if (!matchesId) {
+          continue;
+        }
+        let status;
+        if (type === "seen") {
+          status = isSetFn(id) ? "seen" : "unseen";
+        } else {
+          status = Constants.STATE_UNTRACKED; // Placeholder until main flow integration
+        }
+        updateItem(item, type, status);
+      }
+    };
+
+    return { decorateItem, updateItemUI };
+  })();
+
+  /**
    * @module DOMObserver
    * @description Observes the DOM for changes and triggers callbacks.
    */
