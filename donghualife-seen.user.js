@@ -1054,22 +1054,70 @@
   const AppController = (() => {
     let syncChannel = null;
 
+    /**
+     * Orchestrates UI decoration for episodes, series, and seasons.
+     * Replaces previous EpisodeMarker logic with unified ContentDecorator.
+     * Airbnb JS Style Guide compliant.
+     */
     const applyAll = (root = document) => {
-      const items = Utils.$$(Constants.EPISODE_ITEM_SELECTOR, root).filter((item) => {
+      // Decorate episode items (table rows and cards)
+      for (const item of Utils.$$(Constants.EPISODE_ITEM_SELECTOR, root)) {
         if (item.tagName === "TR" && item.closest("thead")) {
-          return false;
+          continue;
         }
-        return !!Utils.$(Constants.EPISODE_LINK_SELECTOR, item);
-      });
-
-      items.forEach((item) =>
+        if (!Utils.$(Constants.EPISODE_LINK_SELECTOR, item)) {
+          continue;
+        }
         ContentDecorator.decorateItem(item, {
           type: "seen",
           selector: Constants.EPISODE_LINK_SELECTOR,
           onToggle: handleToggle,
           isSetFn: Store.isSeen,
-        }),
-      );
+        });
+      }
+
+      // Decorate series items (headers and cards)
+      for (const item of Utils.$$(Constants.SERIES_ITEM_SELECTOR, root)) {
+        const hasSeries = Boolean(Utils.$("a[href^='/series/']", item));
+        if (!hasSeries) {
+          continue;
+        }
+        const hasSeason = Boolean(Utils.$("a[href^='/season/']", item));
+        const isHeaderLike = Boolean(
+          Utils.$(".page-title", item) || Utils.$("h1", item) || Utils.$("header h1", item),
+        );
+
+        // Only decorate as series if header or no season present
+        if (isHeaderLike || !hasSeason) {
+          ContentDecorator.decorateItem(item, {
+            type: "series",
+            selector: Constants.LINK_SELECTOR,
+            onToggle: handleToggle,
+            isSetFn: Store.isWatching,
+            getStatusFn: Store.getSeriesStatus,
+            preferKind: "series",
+          });
+        }
+      }
+
+      // Decorate season items (cards/lists)
+      for (const item of Utils.$$(Constants.SERIES_ITEM_SELECTOR, root)) {
+        if (!Utils.$("a[href^='/season/']", item)) {
+          continue;
+        }
+        // Avoid double decoration
+        if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === "series") {
+          continue;
+        }
+        ContentDecorator.decorateItem(item, {
+          type: "series",
+          selector: Constants.LINK_SELECTOR,
+          onToggle: handleToggle,
+          isSetFn: Store.isWatching,
+          getStatusFn: Store.getSeriesStatus,
+          preferKind: "season",
+        });
+      }
     };
 
     const handleToggle = async (id, seen) => {
