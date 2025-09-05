@@ -1204,6 +1204,24 @@
     };
 
     /**
+     * Propagates the "watching" state to season and series when an episode is marked as seen.
+     * Isolated for clarity and testability.
+     * @param {string} episodeId - The episode's unique identifier.
+     * @returns {Promise<void>}
+     */
+    const propagateWatchingState = async (episodeId) => {
+      const { seasonId, seriesId } = Utils.getHierarchyFromEpisodePath(episodeId);
+      if (seasonId && !Store.isWatching(seasonId)) {
+        await Store.setWatching(seasonId, true);
+      }
+      if (seriesId && !Store.isWatching(seriesId)) {
+        await Store.setWatching(seriesId, true);
+        const seriesName = Utils.getSeriesNameForId(seriesId);
+        UIManager.showToast(I18n.t("toastAutoTrack", { seriesName }));
+      }
+    };
+
+    /**
      * Handles item state changes and propagates them across hierarchy.
      */
     const handleToggle = async (type, id, currentStatus, item) => {
@@ -1215,14 +1233,7 @@
         // Automatic propagation to season and series
         const { seasonId, seriesId } = Utils.getHierarchyFromEpisodePath(id);
         if (newSeen) {
-          if (seasonId && !Store.isWatching(seasonId)) {
-            await Store.setWatching(seasonId, true);
-          }
-          if (seriesId && !Store.isWatching(seriesId)) {
-            await Store.setWatching(seriesId, true);
-            const seriesName = Utils.getSeriesNameForId(seriesId);
-            UIManager.showToast(I18n.t("toastAutoTrack", { seriesName }));
-          }
+          await propagateWatchingState(id);
         }
         ContentDecorator.updateItemUI(id, {
           type: "seen",
