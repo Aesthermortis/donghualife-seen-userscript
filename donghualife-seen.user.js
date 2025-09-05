@@ -644,6 +644,8 @@
       },
       getState: () => ({ ...state }),
       isSeen: (id) => state.seenSet.has(id),
+      isWatching: (id) => state.watchingSet.has(id),
+      isCompleted: (id) => state.completedSet.has(id),
       isRowHighlightOn: () =>
         typeof state.prefs.rowHighlight === "boolean"
           ? state.prefs.rowHighlight
@@ -945,8 +947,9 @@
         if (type === "seen") {
           status = isSetFn(id) ? "seen" : "unseen";
         } else {
-          status = Constants.STATE_UNTRACKED; // Placeholder until main flow integration
+          status = Constants.STATE_UNTRACKED;
         }
+        // This method updates the button's text, class, and attributes
         updateItem(item, type, status);
       }
     };
@@ -1395,36 +1398,57 @@
       }
     };
 
+    /**
+     * App initialization: ensures robust state synchronization, localization,
+     * and immediate UI feedback.
+     */
     const init = async () => {
+      // Ensure document.body is available
       if (!document.body) {
         await new Promise((resolve) => {
-          const obs = new MutationObserver(() => {
+          const observer = new MutationObserver(() => {
             if (document.body) {
-              obs.disconnect();
+              observer.disconnect();
               resolve();
             }
           });
-          obs.observe(document.documentElement, { childList: true });
+          observer.observe(document.documentElement, { childList: true });
         });
       }
 
+      // Inject global styles
       UIManager.injectCSS();
+
+      // Subscribe to state changes for real-time UI updates
       Store.subscribe(handleStateChange);
+
+      // Load persistent seen-state from DB
       await Store.load();
 
-      // Initialize i18n with the user's actual preference
+      // Initialize i18n with user preference
       I18n.init(Store.getUserLang());
 
+      // Create settings menu and global listeners
       Settings.createButton();
       setupSyncChannel();
       setupGlobalClickListener();
 
+      // Decorate all episodes based on current seen-state
       applyAll();
+
+      // Reactively decorate episodes for dynamic DOM changes
       DOMObserver.observe(() => applyAll());
 
+      // Robust handling for tabs opened/restored before script update
       const currentPath = location.pathname;
       if (Utils.isEpisodePathname(currentPath) && !Store.isSeen(currentPath)) {
-        handleToggle(currentPath, true);
+        // Register episode as seen and update UI immediately
+        await handleToggle(
+          "seen",
+          currentPath,
+          "unseen",
+          document.querySelector(Constants.EPISODE_ITEM_SELECTOR),
+        );
       }
     };
 
