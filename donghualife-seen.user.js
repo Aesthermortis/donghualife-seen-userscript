@@ -155,22 +155,92 @@
    * @description Provides utility functions for DOM manipulation and data parsing.
    */
   const Utils = {
+    /**
+     * Selects the first element matching the selector.
+     * @param {string} sel
+     * @param {Document|Element} root
+     * @returns {Element|null}
+     */
     $: (sel, root = document) => root.querySelector(sel),
+
+    /**
+     * Selects all elements matching the selector.
+     * @param {string} sel
+     * @param {Document|Element} root
+     * @returns {Element[]}
+     */
     $$: (sel, root = document) => Array.from(root.querySelectorAll(sel)),
+
+    /**
+     * Converts slug to title case.
+     * @param {string} slug
+     * @returns {string}
+     */
     slugToTitle: (slug) => slug.replace(/[-_]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()),
-    getHierarchyFromEpisodePath: (p) => {
-      try {
-        const m = p.match(/^\/episode\/(.+?)-(\d+)-/i);
-        if (!m) {
-          return { seasonId: null, seriesId: null };
-        }
-        const slug = m[1];
-        const num = m[2];
-        return { seasonId: `/season/${slug}-${num}`, seriesId: `/series/${slug}` };
-      } catch {
-        return { seasonId: null, seriesId: null };
+
+    /**
+     * Extracts seriesId and seasonId from an episode path.
+     * Supports multiple URL formats for robustness.
+     * @param {string} episodePath
+     * @returns {{ seasonId: string|null, seriesId: string|null }}
+     */
+    getHierarchyFromEpisodePath: (episodePath) => {
+      if (typeof episodePath !== "string") {
+        return { seriesId: null, seasonId: null };
       }
+      // Try to match /series/{sid}/season/{stid}/episode/{eid}
+      const parts = episodePath.split("/");
+      let seriesId = null;
+      let seasonId = null;
+      for (let i = 0; i < parts.length; i += 1) {
+        if (parts[i] === "series" && parts[i + 1]) {
+          seriesId = `/series/${parts[i + 1]}`;
+        }
+        if (parts[i] === "season" && parts[i + 1]) {
+          seasonId = `/season/${parts[i + 1]}`;
+        }
+      }
+      // Fallback to previous slug-based extraction if needed
+      if (!seriesId || !seasonId) {
+        const m = episodePath.match(/^\/episode\/(.+?)-(\d+)-/i);
+        if (m) {
+          const slug = m[1];
+          const num = m[2];
+          return { seasonId: `/season/${slug}-${num}`, seriesId: `/series/${slug}` };
+        }
+      }
+      return { seasonId, seriesId };
     },
+
+    /**
+     * Finds the series name for a given seriesId by searching the DOM.
+     * @param {string} seriesId
+     * @returns {string}
+     */
+    getSeriesNameForId: (seriesId) => {
+      if (typeof seriesId !== "string") {
+        return "Unknown Series";
+      }
+      // Look for a link that starts with the seriesId
+      const link = document.querySelector(`a[href^='${seriesId}']`);
+      if (link && link.textContent) {
+        return link.textContent.trim();
+      }
+      // Fallback: look for main page title/header
+      const header = document.querySelector(
+        ".page-title, h1.title, h1, .entry-title, .titulo, .title, header h1",
+      );
+      if (header && header.textContent) {
+        return header.textContent.trim();
+      }
+      return "Unknown Series";
+    },
+
+    /**
+     * Finds the series title from a root element.
+     * @param {Element|Document} root
+     * @returns {string|null}
+     */
     getSeriesTitleFromElement: (root) => {
       const cands = [
         ".page-title",
@@ -189,6 +259,13 @@
       }
       return null;
     },
+
+    /**
+     * Debounces a function.
+     * @param {Function} fn
+     * @param {number} ms
+     * @returns {Function}
+     */
     debounce: (fn, ms) => {
       let timeoutId;
       return (...args) => {
@@ -196,6 +273,12 @@
         timeoutId = setTimeout(() => fn(...args), ms);
       };
     },
+
+    /**
+     * Checks if the pathname is an episode.
+     * @param {string} pathname
+     * @returns {boolean}
+     */
     isEpisodePathname: (pathname) => {
       if (Constants.NON_EPISODE_PATH_PATTERNS.some((rx) => rx.test(pathname))) {
         return false;
@@ -1329,4 +1412,7 @@
   } else {
     AppController.init();
   }
+
+  // Expose Utils to the global scope
+  window.Utils = Utils;
 })();
