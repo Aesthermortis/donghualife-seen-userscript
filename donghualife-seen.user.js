@@ -1408,11 +1408,11 @@
         });
       }
 
-      I18n.init(navigator.language);
-
       UIManager.injectCSS();
       Store.subscribe(handleStateChange);
       await Store.load();
+
+      // Initialize i18n with the user's actual preference
       I18n.init(Store.getUserLang());
 
       Settings.createButton();
@@ -1426,6 +1426,13 @@
       if (Utils.isEpisodePathname(currentPath) && !Store.isSeen(currentPath)) {
         handleToggle(currentPath, true);
       }
+    };
+
+    // Handle dynamic language changes
+    Settings.onLangChange = (newLang) => {
+      I18n.init(newLang);
+      applyAll(); // Force re-render of all UI texts
+      // If you need to refresh the Settings menu, call Settings.render() or equivalent
     };
 
     return { init };
