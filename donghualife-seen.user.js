@@ -180,7 +180,7 @@
 
     /**
      * Extracts seriesId and seasonId from an episode path.
-     * Supports multiple URL formats for robustness.
+     * Supports DonghuaLife format and legacy slugs for robustness.
      * @param {string} episodePath
      * @returns {{ seasonId: string|null, seriesId: string|null }}
      */
@@ -188,6 +188,20 @@
       if (typeof episodePath !== "string") {
         return { seriesId: null, seasonId: null };
       }
+
+      // DonghuaLife format: /episode/{series-slug}-{season-number}-episodio-{episode-id}
+      const dlRx = /^\/episode\/([^/-]+(?:-[^/-]+)*)-(\d+)-episodio-([^/]+)$/i;
+      const matchDl = episodePath.match(dlRx);
+
+      if (matchDl) {
+        const seriesSlug = matchDl[1];
+        const seasonNum = matchDl[2];
+        return {
+          seriesId: `/series/${seriesSlug}`,
+          seasonId: `/season/${seriesSlug}-${seasonNum}`,
+        };
+      }
+
       // Try to match /series/{sid}/season/{stid}/episode/{eid}
       const parts = episodePath.split("/");
       let seriesId = null;
@@ -200,13 +214,18 @@
           seasonId = `/season/${parts[i + 1]}`;
         }
       }
+
       // Fallback to previous slug-based extraction if needed
       if (!seriesId || !seasonId) {
-        const m = episodePath.match(/^\/episode\/(.+?)-(\d+)-/i);
-        if (m) {
-          const slug = m[1];
-          const num = m[2];
-          return { seasonId: `/season/${slug}-${num}`, seriesId: `/series/${slug}` };
+        const legacyRx = /^\/episode\/(.+?)-(\d+)-/i;
+        const matchLegacy = episodePath.match(legacyRx);
+        if (matchLegacy) {
+          const slug = matchLegacy[1];
+          const num = matchLegacy[2];
+          return {
+            seriesId: `/series/${slug}`,
+            seasonId: `/season/${slug}-${num}`,
+          };
         }
       }
       return { seasonId, seriesId };
