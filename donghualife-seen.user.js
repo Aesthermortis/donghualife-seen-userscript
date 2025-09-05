@@ -1325,34 +1325,29 @@
     const setupGlobalClickListener = () => {
       document.addEventListener(
         "click",
-        async (e) => {
-          const link = e.target?.closest("a[href]");
+        async (event) => {
+          const link = event.target?.closest("a[href]");
           if (!link) {
             return;
           }
 
-          let url;
-          try {
-            url = new URL(link.href, location.origin);
-          } catch {
-            return;
-          }
+          const url = new URL(link.href, location.origin);
 
-          if (url.origin !== location.origin || !Utils.isEpisodePathname(url.pathname)) {
+          // Check if the path corresponds to an episode using the updated function
+          if (!Utils.isEpisodePathname(url.pathname)) {
             return;
           }
+          // Avoid marking if already seen
           if (Store.isSeen(url.pathname)) {
             return;
           }
 
-          const isPrimaryClick =
-            e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
-          if (isPrimaryClick && link.target !== "_blank") {
-            e.preventDefault();
-            await handleToggle(url.pathname, true);
-            location.href = url.href;
-          } else {
-            handleToggle(url.pathname, true);
+          // Mark the episode as seen and propagate the state
+          await handleToggle("seen", url.pathname, "unseen", link.closest("tr, .episode"));
+
+          // Synchronize across tabs
+          if (syncChannel) {
+            syncChannel.postMessage({ id: url.pathname, seen: true });
           }
         },
         { capture: true, passive: false },
