@@ -1120,16 +1120,81 @@
       }
     };
 
-    const handleToggle = async (id, seen) => {
-      try {
-        await Store.setSeen(id, seen);
-        if (syncChannel) {
-          syncChannel.postMessage({ id, seen });
+    /**
+     * Handles item state changes and propagates them across hierarchy.
+     */
+    const handleToggle = async (type, id, currentStatus, item) => {
+      // Episodes
+      if (type === "seen") {
+        const newSeen = currentStatus !== "seen";
+        await Store.setSeen(id, newSeen);
+
+        // Automatic propagation to season and series
+        const { seasonId, seriesId } = Utils.getHierarchyFromEpisodePath(id);
+        if (newSeen) {
+          if (seasonId && !Store.isWatching(seasonId)) {
+            await Store.setWatching(seasonId, true);
+          }
+          if (seriesId && !Store.isWatching(seriesId)) {
+            await Store.setWatching(seriesId, true);
+            const seriesName = Utils.getSeriesNameForId(seriesId);
+            UIManager.showToast(I18n.t("toastAutoTrack", { seriesName }));
+          }
         }
-      } catch (error) {
-        console.error("Failed to update seen status:", error);
-        UIManager.showToast(I18n.t("toastErrorSaving"));
-        Store.receiveSync(id, !seen);
+        ContentDecorator.updateItemUI(id, {
+          type: "seen",
+          isSetFn: Store.isSeen,
+        });
+        // Optional: update season/series in the UI
+        if (seasonId) {
+          ContentDecorator.updateItemUI(seasonId, {
+            type: "series",
+            isSetFn: Store.isWatching,
+            getStatusFn: Store.getSeriesStatus,
+          });
+        }
+        if (seriesId) {
+          ContentDecorator.updateItemUI(seriesId, {
+            type: "series",
+            isSetFn: Store.isWatching,
+            getStatusFn: Store.getSeriesStatus,
+          });
+        }
+        return;
+      }
+
+      // Series/Seasons
+      if (type === "series") {
+        if (currentStatus === Constants.STATE_WATCHING) {
+          // Mark as completed
+          await Store.setCompleted(id, true);
+          // Propagate to seasons and episodes
+          const seasons = await Store.getSeasonsForSeries(id);
+          for (const seasonId of seasons) {
+            await Store.setCompleted(seasonId, true);
+            const episodes = await Store.getEpisodesForSeason(seasonId);
+            for (const episodeId of episodes) {
+              await Store.setSeen(episodeId, true);
+            }
+          }
+        } else if (currentStatus === Constants.STATE_COMPLETED) {
+          // Unmark as completed
+          await Store.setCompleted(id, false);
+          const seasons = await Store.getSeasonsForSeries(id);
+          for (const seasonId of seasons) {
+            await Store.setCompleted(seasonId, false);
+            const episodes = await Store.getEpisodesForSeason(seasonId);
+            for (const episodeId of episodes) {
+              await Store.setSeen(episodeId, false);
+            }
+          }
+        }
+        ContentDecorator.updateItemUI(id, {
+          type: "series",
+          isSetFn: Store.isWatching,
+          getStatusFn: Store.getSeriesStatus,
+        });
+        return;
       }
     };
 
