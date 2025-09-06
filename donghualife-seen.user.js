@@ -54,8 +54,12 @@
     BTN_TYPE_ATTR: "data-us-dhl-btn-type",
 
     // Selectors
+    LINK_SELECTOR: "a[href]",
+    EPISODE_LINK_SELECTOR:
+      "a[href*='/episode/'], a[href*='/capitulo/'], a[href*='/watch/'], a[href*='/ver/']",
     EPISODE_ITEM_SELECTOR: "table tr, .views-row .episode",
-    EPISODE_LINK_SELECTOR: "a[href]",
+    SEASON_ITEM_SELECTOR: ".season, .views-row .season, .listado-seasons .season, article",
+    SERIES_ITEM_SELECTOR: ".series, .views-row .serie, .listado-series .serie, article",
 
     // Patterns
     EPISODE_PATH_PATTERNS: [
@@ -73,6 +77,11 @@
     // Defaults
     DEFAULT_ROW_HL: false,
     DEFAULT_LANG: "en",
+
+    // Logical states for series/season
+    STATE_UNTRACKED: "untracked",
+    STATE_WATCHING: "watching",
+    STATE_COMPLETED: "completed",
   };
 
   /**
@@ -148,6 +157,14 @@
     .us-dhl-settings-menu { display: flex; flex-direction: column; gap: 0.75rem; }
     .us-dhl-settings-menu .us-dhl-modal-btn { width: 100%; text-align: center; padding: 0.75rem 1rem; justify-content: center; }
     .us-dhl-progress {width: 100%; margin-top: 8px;}
+
+    /* State colors via data attribute (episodes and series/seasons) */
+    .${Constants.BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="seen"]      { background: rgba(4,120,87,.30);  color:#f0fff8; }
+    .${Constants.BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="watching"]  { background: rgba(59,130,246,.30); color:#eff6ff; }
+    .${Constants.BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="completed"] { background: rgba(139,92,246,.30); color:#f5f3ff; }
+    .${Constants.CARD_BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="seen"]      { background: rgba(4,120,87,.75); }
+    .${Constants.CARD_BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="watching"]  { background: rgba(59,130,246,.75); }
+    .${Constants.CARD_BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="completed"] { background: rgba(139,92,246,.75); }
   `;
 
   /**
@@ -256,6 +273,30 @@
     },
 
     /**
+     * Finds the season name for a given seasonId by searching the DOM.
+     * @param {string} seasonId
+     * @returns {string}
+     */
+    getSeasonNameForId: (seasonId) => {
+      if (typeof seasonId !== "string") {
+        return "Unknown Season";
+      }
+      // Look for a link that starts with the seasonId
+      const link = document.querySelector(`a[href^='${seasonId}']`);
+      if (link && link.textContent) {
+        return link.textContent.trim();
+      }
+      // Fallback: look for main page title/header
+      const header = document.querySelector(
+        ".season-title, h2.title, h1, .entry-title, .titulo, .title, header h1",
+      );
+      if (header && header.textContent) {
+        return header.textContent.trim();
+      }
+      return "Unknown Season";
+    },
+
+    /**
      * Finds the series title from a root element.
      * @param {Element|Document} root
      * @returns {string|null}
@@ -269,6 +310,30 @@
         ".titulo",
         ".title",
         "header h1",
+      ];
+      for (const sel of cands) {
+        const t = root.querySelector(sel)?.textContent?.trim();
+        if (t) {
+          return t;
+        }
+      }
+      return null;
+    },
+
+    /**
+     * Finds the season title from a root element.
+     * @param {Element|Document} root
+     * @returns {string|null}
+     */
+    getSeasonTitleFromElement: (root) => {
+      const cands = [
+        ".season-title",
+        "h2.title",
+        "h2",
+        ".entry-title",
+        ".titulo",
+        ".title",
+        "header h2",
       ];
       for (const sel of cands) {
         const t = root.querySelector(sel)?.textContent?.trim();
@@ -314,11 +379,18 @@
     const locales = {
       en: {
         // Buttons & Labels
-        seen: "Seen",
-        mark: "Mark",
         accept: "Accept",
         cancel: "Cancel",
         close: "Close",
+        seen: "Seen",
+        mark: "Mark",
+        watching: "Watching",
+        completed: "Completed",
+        btnToggleWatching: "Toggle following state",
+        btnTitleWatching: "Following. Click to set Completed.",
+        btnTitleCompleted: "Completed. Click to untrack.",
+        btnTitleNotWatching: "Not following. Click to follow.",
+
         // Settings Menu
         settingsTitle: "Script Settings",
         changeLanguage: "Change Language",
@@ -329,6 +401,7 @@
         exportJson: "Export seen (JSON)",
         importJson: "Import seen (JSON)",
         resetAllData: "Reset all seen data",
+
         // Toasts
         toastErrorLoading: "Error loading user data.",
         toastErrorSaving: "Error saving state.",
@@ -341,6 +414,9 @@
         toastLangChanged: "Language changed. Reloading...",
         toastImportSuccess: "Successfully imported {count} records. Reloading...",
         toastDataReset: "Data reset. Reloading...",
+        toastAutoTrackSeason: "Now tracking {seasonName}.",
+        toastAutoTrackSeries: "Now tracking {seriesName}.",
+
         // Modals & Prompts
         exportTitle: "Export Backup",
         exportText: "Copy this text to save a backup of your seen episodes.",
@@ -354,6 +430,7 @@
         resetConfirmText:
           "Are you sure you want to delete all seen episode data? This cannot be undone.",
         resetConfirmOk: "Yes, delete all",
+
         // ARIA & Titles
         fabTitle: "Script Settings",
         fabAriaLabel: "Open userscript settings",
@@ -363,11 +440,18 @@
       },
       es: {
         // Buttons & Labels
-        seen: "Visto",
-        mark: "Marcar",
         accept: "Aceptar",
         cancel: "Cancelar",
         close: "Cerrar",
+        seen: "Visto",
+        mark: "Marcar",
+        watching: "Viendo",
+        completed: "Completado",
+        btnToggleWatching: "Alternar estado de seguimiento",
+        btnTitleWatching: "Siguiendo. Clic para marcar Completado.",
+        btnTitleCompleted: "Completado. Clic para dejar de seguir.",
+        btnTitleNotWatching: "No seguido. Clic para seguir.",
+
         // Settings Menu
         settingsTitle: "Configuración del Script",
         changeLanguage: "Cambiar Idioma",
@@ -378,6 +462,7 @@
         exportJson: "Exportar vistos (JSON)",
         importJson: "Importar vistos (JSON)",
         resetAllData: "Restablecer todos los datos",
+
         // Toasts
         toastErrorLoading: "Error al cargar los datos del usuario.",
         toastErrorSaving: "Error al guardar el estado.",
@@ -390,6 +475,9 @@
         toastLangChanged: "Idioma cambiado. Recargando...",
         toastImportSuccess: "Se importaron {count} registros correctamente. Recargando...",
         toastDataReset: "Datos restablecidos. Recargando...",
+        toastAutoTrackSeason: "Ahora siguiendo {seasonName}.",
+        toastAutoTrackSeries: "Ahora siguiendo {seriesName}.",
+
         // Modals & Prompts
         exportTitle: "Copia de Seguridad",
         exportText: "Copia este texto para guardar una copia de seguridad de tus episodios vistos.",
@@ -403,6 +491,7 @@
         resetConfirmText:
           "Estás a punto de borrar todos los datos de episodios vistos. Esta acción no se puede deshacer.",
         resetConfirmOk: "Sí, borrar todo",
+
         // ARIA & Titles
         fabTitle: "Configuración del Script",
         fabAriaLabel: "Abrir la configuración del userscript",
@@ -794,7 +883,7 @@
         titleKey = isSet ? "btnTitleSeen" : "btnTitleNotSeen";
         ariaLabelKey = "btnToggleSeen";
         btn.setAttribute("aria-pressed", String(isSet));
-      } else {
+      } else if (type === "series" || type === "season") {
         switch (status) {
           case Constants.STATE_COMPLETED:
             textKey = "completed";
@@ -809,6 +898,10 @@
             titleKey = "btnTitleNotWatching";
         }
         ariaLabelKey = "btnToggleWatching";
+        btn.setAttribute("aria-pressed", String(status === Constants.STATE_COMPLETED));
+      } else {
+        console.error(`Unhandled type: ${type}`);
+        return;
       }
 
       btn.textContent = I18n.t(textKey);
@@ -863,7 +956,7 @@
     const updateItem = (item, type, status) => {
       if (type === "seen") {
         item.classList.toggle(Constants.ITEM_SEEN_CLASS, status === "seen");
-      } else {
+      } else if (type === "series" || type === "season") {
         item.classList.toggle(Constants.ITEM_WATCHING_CLASS, status === Constants.STATE_WATCHING);
         item.classList.toggle(Constants.ITEM_COMPLETED_CLASS, status === Constants.STATE_COMPLETED);
       }
@@ -900,10 +993,14 @@
       let status;
       if (type === "seen") {
         status = isSetFn(id) ? "seen" : "unseen";
-      } else {
-        // For series/seasons, status is based on logical state
-        // Not implemented until main flow uses this decorator
-        status = Constants.STATE_UNTRACKED;
+      } else if (type === "series" || type === "season") {
+        if (Store.isCompleted(id)) {
+          status = Constants.STATE_COMPLETED;
+        } else if (Store.isWatching(id)) {
+          status = Constants.STATE_WATCHING;
+        } else {
+          status = Constants.STATE_UNTRACKED;
+        }
       }
 
       updateItem(item, type, status);
@@ -938,7 +1035,8 @@
      */
     const updateItemUI = (id, { isSetFn, getStatusFn, type }) => {
       for (const item of Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="${type}"]`)) {
-        const preferKind = type === "series" ? item.getAttribute(Constants.KIND_ATTR) : null;
+        const preferKind =
+          type === "series" || type === "season" ? item.getAttribute(Constants.KIND_ATTR) : null;
         const matchesId = computeId(item, Constants.LINK_SELECTOR, preferKind) === id;
         if (!matchesId) {
           continue;
@@ -946,8 +1044,14 @@
         let status;
         if (type === "seen") {
           status = isSetFn(id) ? "seen" : "unseen";
-        } else {
-          status = Constants.STATE_UNTRACKED;
+        } else if (type === "series" || type === "season") {
+          if (Store.isCompleted(id)) {
+            status = Constants.STATE_COMPLETED;
+          } else if (Store.isWatching(id)) {
+            status = Constants.STATE_WATCHING;
+          } else {
+            status = Constants.STATE_UNTRACKED;
+          }
         }
         // This method updates the button's text, class, and attributes
         updateItem(item, type, status);
@@ -1183,35 +1287,7 @@
 
       // Decorate series items (headers and cards)
       for (const item of Utils.$$(Constants.SERIES_ITEM_SELECTOR, root)) {
-        const hasSeries = Boolean(Utils.$("a[href^='/series/']", item));
-        if (!hasSeries) {
-          continue;
-        }
-        const hasSeason = Boolean(Utils.$("a[href^='/season/']", item));
-        const isHeaderLike = Boolean(
-          Utils.$(".page-title", item) || Utils.$("h1", item) || Utils.$("header h1", item),
-        );
-
-        // Only decorate as series if header or no season present
-        if (isHeaderLike || !hasSeason) {
-          ContentDecorator.decorateItem(item, {
-            type: "series",
-            selector: Constants.LINK_SELECTOR,
-            onToggle: handleToggle,
-            isSetFn: Store.isWatching,
-            getStatusFn: Store.getSeriesStatus,
-            preferKind: "series",
-          });
-        }
-      }
-
-      // Decorate season items (cards/lists)
-      for (const item of Utils.$$(Constants.SERIES_ITEM_SELECTOR, root)) {
-        if (!Utils.$("a[href^='/season/']", item)) {
-          continue;
-        }
-        // Avoid double decoration
-        if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === "series") {
+        if (!Utils.$("a[href^='/series/']", item)) {
           continue;
         }
         ContentDecorator.decorateItem(item, {
@@ -1220,6 +1296,25 @@
           onToggle: handleToggle,
           isSetFn: Store.isWatching,
           getStatusFn: Store.getSeriesStatus,
+          preferKind: "series",
+        });
+      }
+
+      // Decorate season items (cards/lists)
+      for (const item of Utils.$$(Constants.SEASON_ITEM_SELECTOR, root)) {
+        if (!Utils.$("a[href^='/season/']", item)) {
+          continue;
+        }
+        // Avoid double decoration
+        if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === "season") {
+          continue;
+        }
+        ContentDecorator.decorateItem(item, {
+          type: "season",
+          selector: Constants.LINK_SELECTOR,
+          onToggle: handleToggle,
+          isSetFn: Store.isWatching,
+          getStatusFn: Store.getSeasonStatus,
           preferKind: "season",
         });
       }
@@ -1235,11 +1330,13 @@
       const { seasonId, seriesId } = Utils.getHierarchyFromEpisodePath(episodeId);
       if (seasonId && !Store.isWatching(seasonId)) {
         await Store.setWatching(seasonId, true);
+        const seasonName = Utils.getSeasonNameForId(seasonId);
+        UIManager.showToast(I18n.t("toastAutoTrackSeason", { seasonName }));
       }
       if (seriesId && !Store.isWatching(seriesId)) {
         await Store.setWatching(seriesId, true);
         const seriesName = Utils.getSeriesNameForId(seriesId);
-        UIManager.showToast(I18n.t("toastAutoTrack", { seriesName }));
+        UIManager.showToast(I18n.t("toastAutoTrackSeries", { seriesName }));
       }
     };
 
@@ -1264,7 +1361,7 @@
         // Optional: update season/series in the UI
         if (seasonId) {
           ContentDecorator.updateItemUI(seasonId, {
-            type: "series",
+            type: "season",
             isSetFn: Store.isWatching,
             getStatusFn: Store.getSeriesStatus,
           });
@@ -1280,11 +1377,10 @@
       }
 
       // Series/Seasons
-      if (type === "series") {
+      if (type === "series" || type === "season") {
         if (currentStatus === Constants.STATE_WATCHING) {
-          // Mark as completed
+          // Design decision: Mark as completed and propagate to all child seasons/episodes.
           await Store.setCompleted(id, true);
-          // Propagate to seasons and episodes
           const seasons = await Store.getSeasonsForSeries(id);
           for (const seasonId of seasons) {
             await Store.setCompleted(seasonId, true);
@@ -1294,7 +1390,7 @@
             }
           }
         } else if (currentStatus === Constants.STATE_COMPLETED) {
-          // Unmark as completed
+          // Design decision: Unmark as completed and revert all child seasons/episodes.
           await Store.setCompleted(id, false);
           const seasons = await Store.getSeasonsForSeries(id);
           for (const seasonId of seasons) {
@@ -1304,6 +1400,9 @@
               await Store.setSeen(episodeId, false);
             }
           }
+        } else {
+          // Design decision: Start watching this series/season.
+          await Store.setWatching(id, true);
         }
         ContentDecorator.updateItemUI(id, {
           type: "series",
