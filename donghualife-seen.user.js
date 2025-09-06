@@ -846,7 +846,11 @@
           DatabaseManager.getAll(Constants.DB_STORE_COMPLETED),
           DatabaseManager.getAll(Constants.DB_STORE_SEEN_MOVIES),
         ]);
-        const zip = (keys, vals) => keys.reduce((acc, k, i) => ((acc[k] = vals[i]), acc), {});
+        const zip = (keys, vals) =>
+          keys.reduce((acc, k, i) => {
+            acc[k] = vals[i];
+            return acc;
+          }, {});
         return {
           seen: zip(seenKeys, seenVals),
           watching: zip(watchingKeys, watchingVals),
