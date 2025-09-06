@@ -30,10 +30,11 @@
     PREFS_KEY: "us-dhl:prefs:v1",
     SYNC_CHANNEL_NAME: "us-dhl-sync:v1",
     DB_NAME: "donghualife-seen-db",
-    DB_VERSION: 2,
+    DB_VERSION: 3,
     DB_STORE_SEEN: "seenEpisodes",
     DB_STORE_WATCHING: "watchingItems",
     DB_STORE_COMPLETED: "completedItems",
+    DB_STORE_SEEN_MOVIES: "Movies",
 
     // DOM Attributes and Classes
     ITEM_SEEN_ATTR: "data-us-dhl-decorated",
@@ -60,6 +61,7 @@
     EPISODE_ITEM_SELECTOR: "table tr, .views-row .episode",
     SEASON_ITEM_SELECTOR: ".season, .views-row .season, .listado-seasons .season, article",
     SERIES_ITEM_SELECTOR: ".series, .views-row .serie, .listado-series .serie, article",
+    MOVIE_ITEM_SELECTOR: ".movie, .views-row .movie, .listado-movies .movie",
 
     // Patterns
     EPISODE_PATH_PATTERNS: [
@@ -551,6 +553,9 @@
             if (!db.objectStoreNames.contains(Constants.DB_STORE_COMPLETED)) {
               db.createObjectStore(Constants.DB_STORE_COMPLETED);
             }
+            if (!db.objectStoreNames.contains(Constants.DB_STORE_SEEN_MOVIES)) {
+              db.createObjectStore(Constants.DB_STORE_SEEN_MOVIES);
+            }
           };
         });
       return tryOpen(Constants.DB_VERSION).catch((err) => {
@@ -715,6 +720,7 @@
       seenSet: new Set(),
       watchingSet: new Set(),
       completedSet: new Set(),
+      seenMoviesSet: new Set(),
       prefs: {},
     };
     const listeners = [];
@@ -735,6 +741,7 @@
       isSeen: (id) => state.seenSet.has(id),
       isWatching: (id) => state.watchingSet.has(id),
       isCompleted: (id) => state.completedSet.has(id),
+      isMovieSeen: (id) => state.seenMoviesSet.has(id),
       isRowHighlightOn: () =>
         typeof state.prefs.rowHighlight === "boolean"
           ? state.prefs.rowHighlight
@@ -742,15 +749,18 @@
       getUserLang: () => state.prefs.userLang || navigator.language || Constants.DEFAULT_LANG,
       async load() {
         try {
-          const [seenKeys, watchingKeys, completedKeys, rawPrefs] = await Promise.all([
-            DatabaseManager.getAllKeys(Constants.DB_STORE_SEEN),
-            DatabaseManager.getAllKeys(Constants.DB_STORE_WATCHING),
-            DatabaseManager.getAllKeys(Constants.DB_STORE_COMPLETED),
-            GM.getValue(Constants.PREFS_KEY, "{}"),
-          ]);
+          const [seenKeys, watchingKeys, completedKeys, seenMoviesKeys, rawPrefs] =
+            await Promise.all([
+              DatabaseManager.getAllKeys(Constants.DB_STORE_SEEN),
+              DatabaseManager.getAllKeys(Constants.DB_STORE_WATCHING),
+              DatabaseManager.getAllKeys(Constants.DB_STORE_COMPLETED),
+              DatabaseManager.getAllKeys(Constants.DB_STORE_SEEN_MOVIES),
+              GM.getValue(Constants.PREFS_KEY, "{}"),
+            ]);
           state.seenSet = new Set(seenKeys);
           state.watchingSet = new Set(watchingKeys);
           state.completedSet = new Set(completedKeys);
+          state.seenMoviesSet = new Set(seenMoviesKeys);
           state.prefs = JSON.parse(rawPrefs);
           broadcast({ type: "INIT", payload: { oldPrefs: {}, newPrefs: state.prefs } });
         } catch (error) {
@@ -789,6 +799,13 @@
         }
         broadcast({ type: "COMPLETED_CHANGE", payload: { id } });
       },
+      async setMovieSeen(id, seen = true) {
+        await DatabaseManager[seen ? "set" : "delete"](Constants.DB_STORE_SEEN_MOVIES, id, {
+          t: Date.now(),
+        });
+        state.seenMoviesSet[seen ? "add" : "delete"](id);
+        broadcast({ type: "MOVIE_SEEN_CHANGE", payload: { id } });
+      },
       async setPrefs(newPrefs) {
         const oldPrefs = { ...state.prefs };
         state.prefs = newPrefs;
@@ -807,29 +824,34 @@
         state.seenSet.clear();
         state.watchingSet.clear();
         state.completedSet.clear();
+        state.seenMoviesSet.clear();
         await Promise.all([
           DatabaseManager.clear(Constants.DB_STORE_SEEN),
           DatabaseManager.clear(Constants.DB_STORE_WATCHING),
           DatabaseManager.clear(Constants.DB_STORE_COMPLETED),
+          DatabaseManager.clear(Constants.DB_STORE_SEEN_MOVIES),
         ]);
         broadcast({ type: "CLEAR_ALL" });
       },
       async exportData() {
-        const [seenKeys, watchingKeys, completedKeys] = await Promise.all([
+        const [seenKeys, watchingKeys, completedKeys, seenMoviesKeys] = await Promise.all([
           DatabaseManager.getAllKeys(Constants.DB_STORE_SEEN),
           DatabaseManager.getAllKeys(Constants.DB_STORE_WATCHING),
           DatabaseManager.getAllKeys(Constants.DB_STORE_COMPLETED),
+          DatabaseManager.getAllKeys(Constants.DB_STORE_SEEN_MOVIES),
         ]);
-        const [seenVals, watchingVals, completedVals] = await Promise.all([
+        const [seenVals, watchingVals, completedVals, seenMoviesVals] = await Promise.all([
           DatabaseManager.getAll(Constants.DB_STORE_SEEN),
           DatabaseManager.getAll(Constants.DB_STORE_WATCHING),
           DatabaseManager.getAll(Constants.DB_STORE_COMPLETED),
+          DatabaseManager.getAll(Constants.DB_STORE_SEEN_MOVIES),
         ]);
         const zip = (keys, vals) => keys.reduce((acc, k, i) => ((acc[k] = vals[i]), acc), {});
         return {
           seen: zip(seenKeys, seenVals),
           watching: zip(watchingKeys, watchingVals),
           completed: zip(completedKeys, completedVals),
+          seenMovies: zip(seenMoviesKeys, seenMoviesVals),
         };
       },
     };
@@ -877,7 +899,7 @@
       let titleKey;
       let ariaLabelKey;
 
-      if (type === "seen") {
+      if (type === "seen" || type === "movie") {
         const isSet = status === "seen";
         textKey = isSet ? "seen" : "mark";
         titleKey = isSet ? "btnTitleSeen" : "btnTitleNotSeen";
@@ -954,7 +976,7 @@
      * Applies or removes visual classes for state.
      */
     const updateItem = (item, type, status) => {
-      if (type === "seen") {
+      if (type === "seen" || type === "movie") {
         item.classList.toggle(Constants.ITEM_SEEN_CLASS, status === "seen");
       } else if (type === "series" || type === "season") {
         item.classList.toggle(Constants.ITEM_WATCHING_CLASS, status === Constants.STATE_WATCHING);
@@ -991,7 +1013,7 @@
       item.setAttribute(Constants.ITEM_DECORATED_ATTR, type);
 
       let status;
-      if (type === "seen") {
+      if (type === "seen" || type === "movie") {
         status = isSetFn(id) ? "seen" : "unseen";
       } else if (type === "series" || type === "season") {
         if (Store.isCompleted(id)) {
@@ -1042,7 +1064,7 @@
           continue;
         }
         let status;
-        if (type === "seen") {
+        if (type === "seen" || type === "movie") {
           status = isSetFn(id) ? "seen" : "unseen";
         } else if (type === "series" || type === "season") {
           if (Store.isCompleted(id)) {
@@ -1318,6 +1340,16 @@
           preferKind: "season",
         });
       }
+
+      // Decorate movie items (cards)
+      for (const item of Utils.$$(Constants.MOVIE_ITEM_SELECTOR, root)) {
+        ContentDecorator.decorateItem(item, {
+          type: "movie",
+          selector: Constants.LINK_SELECTOR,
+          onToggle: handleToggle,
+          isSetFn: Store.isMovieSeen,
+        });
+      }
     };
 
     /**
@@ -1411,6 +1443,17 @@
         });
         return;
       }
+
+      // Movies
+      if (type === "movie") {
+        const newSeen = currentStatus !== "seen";
+        await Store.setMovieSeen(id, newSeen);
+        ContentDecorator.updateItemUI(id, {
+          type: "movie",
+          isSetFn: Store.isMovieSeen,
+        });
+        return;
+      }
     };
 
     const setupSyncChannel = () => {
@@ -1485,15 +1528,25 @@
           break;
         }
 
-        case "SEEN_CHANGE":
+        case "SEEN_CHANGE": {
           ContentDecorator.updateItemUI(change.payload.id, {
             type: "seen",
             isSetFn: Store.isSeen,
           });
           break;
-        case "CLEAR_SEEN":
+        }
+
+        case "CLEAR_SEEN": {
           Utils.$$(`[${Constants.ITEM_SEEN_ATTR}]`).forEach(ContentDecorator.resetItemUI);
           break;
+        }
+        case "MOVIE_SEEN_CHANGE": {
+          ContentDecorator.updateItemUI(change.payload.id, {
+            type: "movie",
+            isSetFn: Store.isMovieSeen,
+          });
+          break;
+        }
       }
     };
 
