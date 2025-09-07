@@ -1006,6 +1006,8 @@
       // Store kind if relevant
       if (type === "series" && preferKind) {
         item.setAttribute(Constants.KIND_ATTR, preferKind);
+      } else if (type === "season" && preferKind) {
+        item.setAttribute(Constants.KIND_ATTR, preferKind);
       }
 
       const id = computeId(item, selector, type === "series" ? preferKind : null);
@@ -1315,6 +1317,10 @@
         if (!Utils.$("a[href^='/series/']", item)) {
           continue;
         }
+        // Avoid double decoration
+        if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === "series") {
+          continue;
+        }
         ContentDecorator.decorateItem(item, {
           type: "series",
           selector: Constants.LINK_SELECTOR,
@@ -1332,6 +1338,9 @@
         }
         // Avoid double decoration
         if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === "season") {
+          continue;
+        }
+        if (item.closest("table, tr")) {
           continue;
         }
         ContentDecorator.decorateItem(item, {
