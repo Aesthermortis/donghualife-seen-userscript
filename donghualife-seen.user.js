@@ -59,8 +59,8 @@
     EPISODE_LINK_SELECTOR:
       "a[href*='/episode/'], a[href*='/capitulo/'], a[href*='/watch/'], a[href*='/ver/']",
     EPISODE_ITEM_SELECTOR: "table tr, .views-row .episode",
-    SEASON_ITEM_SELECTOR: ".season, .views-row .season, .listado-seasons .season, article",
-    SERIES_ITEM_SELECTOR: ".series, .views-row .serie, .listado-series .serie, article",
+    SEASON_ITEM_SELECTOR: ".serie, .season, .views-row .season, .listado-seasons .season, .titulo",
+    SERIES_ITEM_SELECTOR: ".series, .views-row .serie, .listado-series .serie, .titulo",
     MOVIE_ITEM_SELECTOR: ".movie, .views-row .movie, .listado-movies .movie",
 
     // Patterns
@@ -99,9 +99,13 @@
       transition:filter .15s ease, background .15s ease; white-space: nowrap;
     }
     .${Constants.BTN_CLASS}:hover{ filter:brightness(1.2); }
-    .${Constants.BTN_CLASS}[aria-pressed="true"]{ background:rgba(4, 120, 87, .3); color:#f0fff8; }
+    .${Constants.BTN_CLASS}[aria-pressed="true"]{ background:rgba(4, 120, 87, .75); color:#f0fff8; }
     .${Constants.BTN_CLASS}[aria-pressed="true"]:hover{ filter:brightness(1.3); }
     .${Constants.BTN_CLASS}:focus{ outline:2px solid rgba(255,255,255,.35); outline-offset:2px; }
+
+    .${Constants.BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="seen"]      { background: rgba(4,120,87,.75);  color:#f0fff8; }
+    .${Constants.BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="watching"]  { background: rgba(59,130,246,.75); color:#eff6ff; }
+    .${Constants.BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="completed"] { background: rgba(139,92,246,.75); color:#f5f3ff; }
 
     /* Episode Card Button Specifics */
     .views-row .episode { position: relative; }
@@ -111,6 +115,9 @@
       backdrop-filter: blur(4px);
     }
     .${Constants.CARD_BTN_CLASS}[aria-pressed="true"] { background: rgba(4, 120, 87, 0.75); }
+    .${Constants.CARD_BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="seen"]      { background: rgba(4,120,87,.75); }
+    .${Constants.CARD_BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="watching"]  { background: rgba(59,130,246,.75); }
+    .${Constants.CARD_BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="completed"] { background: rgba(139,92,246,.75); }
 
     /* Table Control Column */
     .${Constants.CTRL_CELL_CLASS}{ width:1%; white-space:nowrap; text-align:right; }
@@ -124,7 +131,7 @@
 
     /* Motion Preferences */
     @media (prefers-reduced-motion: no-preference) {
-      .${Constants.BTN_CLASS}, .${Constants.ROOT_HL_CLASS} .${Constants.ITEM_SEEN_CLASS} { transition: all .15s ease; }
+      .${Constants.BTN_CLASS}, .${Constants.ROOT_HL_CLASS} .${Constants.ITEM_SEEN_CLASS}, .${Constants.ITEM_WATCHING_CLASS}, .${Constants.ITEM_COMPLETED_CLASS} { transition: all .15s ease; }
     }
 
     /* Floating Action Button (FAB) */
@@ -159,14 +166,6 @@
     .us-dhl-settings-menu { display: flex; flex-direction: column; gap: 0.75rem; }
     .us-dhl-settings-menu .us-dhl-modal-btn { width: 100%; text-align: center; padding: 0.75rem 1rem; justify-content: center; }
     .us-dhl-progress {width: 100%; margin-top: 8px;}
-
-    /* State colors via data attribute (episodes and series/seasons) */
-    .${Constants.BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="seen"]      { background: rgba(4,120,87,.30);  color:#f0fff8; }
-    .${Constants.BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="watching"]  { background: rgba(59,130,246,.30); color:#eff6ff; }
-    .${Constants.BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="completed"] { background: rgba(139,92,246,.30); color:#f5f3ff; }
-    .${Constants.CARD_BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="seen"]      { background: rgba(4,120,87,.75); }
-    .${Constants.CARD_BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="watching"]  { background: rgba(59,130,246,.75); }
-    .${Constants.CARD_BTN_CLASS}[${Constants.ITEM_STATE_ATTR}="completed"] { background: rgba(139,92,246,.75); }
   `;
 
   /**
