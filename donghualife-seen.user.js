@@ -1,15 +1,13 @@
 // ==UserScript==
 // @name         DonghuaLife – Mark Watched Episodes (✅)
 // @namespace    us_dhl_seen
-// @version      2.1.0
+// @version      3.0.0
 // @description  Adds a button to mark watched episodes, syncs status across tabs, and provides data management tools.
 // @author       Aesthermortis
 // @match        *://*.donghualife.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=donghualife.com
 // @run-at       document-idle
-// @grant        GM.getValue
-// @grant        GM.setValue
-// @grant        GM.registerMenuCommand
+// @grant        none
 // @license      MIT
 // @noframes
 // @downloadURL  https://raw.githubusercontent.com/Aesthermortis/donghualife-seen-userscript/main/donghualife-seen.user.js
@@ -21,20 +19,42 @@
 (() => {
   "use strict";
 
+  // IndexedDB constants
+  const DB_NAME = "donghualife-seen-db";
+  const DB_VERSION = 4;
+  const DB_STORE_SERIES = "Series";
+  const DB_STORE_SEASONS = "Seasons";
+  const DB_STORE_EPISODES = "Episodes";
+  const DB_STORE_MOVIES = "Movies";
+  const DB_STORE_PREFS = "Preferences";
+
+  const STORE_LIST = [
+    DB_STORE_SERIES,
+    DB_STORE_SEASONS,
+    DB_STORE_EPISODES,
+    DB_STORE_MOVIES,
+    DB_STORE_PREFS,
+  ];
+
+  const TYPE_TO_STORE = {
+    series: DB_STORE_SERIES,
+    season: DB_STORE_SEASONS,
+    episode: DB_STORE_EPISODES,
+    movie: DB_STORE_MOVIES,
+  };
+
+  // Main logical states
+  const STATE_UNTRACKED = "untracked";
+  const STATE_WATCHING = "watching";
+  const STATE_COMPLETED = "completed";
+
   /**
    * @module Constants
    * @description Defines all the constants used throughout the script.
    */
   const Constants = {
-    // Storage and Sync
-    PREFS_KEY: "us-dhl:prefs:v1",
+    // Sync
     SYNC_CHANNEL_NAME: "us-dhl-sync:v1",
-    DB_NAME: "donghualife-seen-db",
-    DB_VERSION: 3,
-    DB_STORE_SEEN: "seenEpisodes",
-    DB_STORE_WATCHING: "watchingItems",
-    DB_STORE_COMPLETED: "completedItems",
-    DB_STORE_SEEN_MOVIES: "Movies",
 
     // DOM Attributes and Classes
     ITEM_SEEN_ATTR: "data-us-dhl-decorated",
@@ -52,7 +72,6 @@
     CTRL_CELL_CLASS: "us-dhl-ctrlcol",
     FAB_CLASS: "us-dhl-fab",
     KIND_ATTR: "data-us-dhl-kind",
-    BTN_TYPE_ATTR: "data-us-dhl-btn-type",
 
     // Selectors
     LINK_SELECTOR: "a[href]",
@@ -74,16 +93,20 @@
       /\/[0-9]+\/?$/i,
       /\/[^/]+\/[0-9]+/i,
     ],
-    NON_EPISODE_PATH_PATTERNS: [/\/user\//i, /\/search\//i, /\/category\//i],
+
+    MOVIE_PATH_PATTERNS: [
+      /\/movie\//i,
+      /\/pelicula\//i,
+      /\/film\//i,
+      /\/movies\//i,
+      /\/ver-pelicula\//i,
+    ],
+
+    EXCLUDED_PATH_PATTERNS: [/\/user\//i, /\/search\//i, /\/category\//i],
 
     // Defaults
     DEFAULT_ROW_HL: false,
     DEFAULT_LANG: "en",
-
-    // Logical states for series/season
-    STATE_UNTRACKED: "untracked",
-    STATE_WATCHING: "watching",
-    STATE_COMPLETED: "completed",
   };
 
   /**
@@ -248,6 +271,59 @@
       }
       return { seasonId, seriesId };
     },
+    /**
+     * Extracts the seriesId from a seasonId.
+     * @param {string} seasonId
+     * @returns {string|null}
+     */
+    getSeriesIdFromSeasonId: (seasonId) => {
+      // E.g.: /season/one-piece-2 → /series/one-piece
+      const m = seasonId.match(/^\/season\/(.+?)(?:-\d+)?$/i);
+      if (!m) {
+        return null;
+      }
+      return `/series/${m[1].replace(/-\d+$/, "")}`;
+    },
+
+    /**
+     * Extracts the seasonId from an episodeId.
+     * @param {string} episodeId
+     * @returns {string|null}
+     */
+    getSeasonIdFromEpisodeId: (episodeId) => {
+      // E.g.: /episode/one-piece-2-12 → /season/one-piece-2
+      const m = episodeId.match(/^\/episode\/(.+?-\d+)-/i);
+      if (!m) {
+        return null;
+      }
+      return `/season/${m[1]}`;
+    },
+
+    /**
+     * Extracts the seriesId from an episodeId.
+     * @param {string} episodeId
+     * @returns {string|null}
+     */
+    getSeriesIdFromEpisodeId: (episodeId) => {
+      // E.g.: /episode/one-piece-2-12 → /series/one-piece
+      const m = episodeId.match(/^\/episode\/(.+?)-\d+-/i);
+      if (!m) {
+        return null;
+      }
+      return `/series/${m[1]}`;
+    },
+
+    /**
+     * Returns { seriesId, seasonId } for any episodeId.
+     * @param {string} episodeId
+     * @returns {{ seriesId: string|null, seasonId: string|null }}
+     */
+    getHierarchyFromEpisodeId: (episodeId) => {
+      return {
+        seriesId: Utils.getSeriesIdFromEpisodeId(episodeId),
+        seasonId: Utils.getSeasonIdFromEpisodeId(episodeId),
+      };
+    },
 
     /**
      * Finds the series name for a given seriesId by searching the DOM.
@@ -365,10 +441,22 @@
      * @returns {boolean}
      */
     isEpisodePathname: (pathname) => {
-      if (Constants.NON_EPISODE_PATH_PATTERNS.some((rx) => rx.test(pathname))) {
+      if (Constants.EXCLUDED_PATH_PATTERNS.some((rx) => rx.test(pathname))) {
         return false;
       }
       return Constants.EPISODE_PATH_PATTERNS.some((rx) => rx.test(pathname));
+    },
+
+    /**
+     * Checks if the pathname is a movie.
+     * @param {string} pathname
+     * @returns {boolean}
+     */
+    isMoviePathname: (pathname) => {
+      if (Constants.EXCLUDED_PATH_PATTERNS.some((rx) => rx.test(pathname))) {
+        return false;
+      }
+      return Constants.MOVIE_PATH_PATTERNS.some((rx) => rx.test(pathname));
     },
   };
 
@@ -526,60 +614,58 @@
    */
   const DatabaseManager = (() => {
     let dbInstance = null;
-    const openDB = () => {
-      if (dbInstance) {
-        return Promise.resolve(dbInstance);
-      }
-      const tryOpen = (version) =>
-        new Promise((resolve, reject) => {
-          const request =
-            version !== null
-              ? indexedDB.open(Constants.DB_NAME, version)
-              : indexedDB.open(Constants.DB_NAME);
-          request.onerror = (event) => reject(event.target.error);
-          request.onsuccess = (event) => {
-            dbInstance = event.target.result;
-            resolve(dbInstance);
-          };
-          request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains(Constants.DB_STORE_SEEN)) {
-              db.createObjectStore(Constants.DB_STORE_SEEN);
-            }
-            if (!db.objectStoreNames.contains(Constants.DB_STORE_WATCHING)) {
-              db.createObjectStore(Constants.DB_STORE_WATCHING);
-            }
-            if (!db.objectStoreNames.contains(Constants.DB_STORE_COMPLETED)) {
-              db.createObjectStore(Constants.DB_STORE_COMPLETED);
-            }
-            if (!db.objectStoreNames.contains(Constants.DB_STORE_SEEN_MOVIES)) {
-              db.createObjectStore(Constants.DB_STORE_SEEN_MOVIES);
-            }
-          };
-        });
-      return tryOpen(Constants.DB_VERSION).catch((err) => {
-        if (String(err?.name) === "VersionError") {
-          return tryOpen(null);
-        }
-        throw err;
-      });
-    };
-    const perform = async (storeName, mode, operation) => {
-      const db = await openDB();
-      const tx = db.transaction(storeName, mode);
-      const store = tx.objectStore(storeName);
+
+    function openDB() {
       return new Promise((resolve, reject) => {
-        const request = operation(store);
-        request.onerror = (event) => reject(event.target.error);
-        request.onsuccess = (event) => resolve(event.target.result);
+        if (dbInstance) {
+          return resolve(dbInstance);
+        }
+
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = function (event) {
+          const db = event.target.result;
+          for (const store of STORE_LIST) {
+            if (!db.objectStoreNames.contains(store)) {
+              db.createObjectStore(store, { keyPath: "id" });
+            }
+          }
+          // Add the Preferences store if it doesn't exist
+          if (!db.objectStoreNames.contains(DB_STORE_PREFS)) {
+            db.createObjectStore(DB_STORE_PREFS, { keyPath: "id" });
+          }
+        };
+        request.onsuccess = function () {
+          dbInstance = request.result;
+          resolve(dbInstance);
+        };
+        request.onerror = function () {
+          reject(request.error);
+        };
+        return null;
       });
-    };
+    }
+
+    function perform(store, mode, fn) {
+      return openDB().then(
+        (db) =>
+          new Promise((resolve, reject) => {
+            const tx = db.transaction(store, mode);
+            const s = tx.objectStore(store);
+            const req = fn(s);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+          }),
+      );
+    }
+
     return {
-      set: (store, key, value) => perform(store, "readwrite", (s) => s.put(value, key)),
+      set: (store, key, value) => perform(store, "readwrite", (s) => s.put({ ...value, id: key })),
       delete: (store, key) => perform(store, "readwrite", (s) => s.delete(key)),
       clear: (store) => perform(store, "readwrite", (s) => s.clear()),
       getAll: (store) => perform(store, "readonly", (s) => s.getAll()),
+      get: (store, key) => perform(store, "readonly", (s) => s.get(key)),
       getAllKeys: (store) => perform(store, "readonly", (s) => s.getAllKeys()),
+      count: (store) => perform(store, "readonly", (s) => s.count()),
     };
   })();
 
@@ -715,148 +801,231 @@
    * @description Manages the application's state, including seen/watching sets and preferences.
    */
   const Store = (() => {
-    const state = {
-      seenSet: new Set(),
-      watchingSet: new Set(),
-      completedSet: new Set(),
-      seenMoviesSet: new Set(),
-      prefs: {},
+    // Caches for storing entities in memory
+    const caches = {
+      Episodes: new Map(),
+      Series: new Map(),
+      Seasons: new Map(),
+      Movies: new Map(),
+      prefs: new Map(),
     };
-    const listeners = [];
-    const broadcast = (change) => {
-      listeners.forEach((listener) => listener(change));
-    };
-    return {
-      subscribe: (listener) => {
-        listeners.push(listener);
-        return () => {
-          const index = listeners.indexOf(listener);
-          if (index > -1) {
-            listeners.splice(index, 1);
-          }
-        };
-      },
-      getState: () => ({ ...state }),
-      isSeen: (id) => state.seenSet.has(id),
-      isWatching: (id) => state.watchingSet.has(id),
-      isCompleted: (id) => state.completedSet.has(id),
-      isMovieSeen: (id) => state.seenMoviesSet.has(id),
-      isRowHighlightOn: () =>
-        typeof state.prefs.rowHighlight === "boolean"
-          ? state.prefs.rowHighlight
-          : Constants.DEFAULT_ROW_HL,
-      getUserLang: () => state.prefs.userLang || navigator.language || Constants.DEFAULT_LANG,
-      async load() {
+
+    // Map entity types to their respective stores
+    async function load() {
+      for (const store of Object.values(TYPE_TO_STORE)) {
+        const items = await DatabaseManager.getAll(store);
+        caches[store].clear();
+        for (const obj of items) {
+          caches[store].set(obj.id, obj);
+        }
+      }
+      // Load preferences
+      const prefs = await DatabaseManager.get(DB_STORE_PREFS, "userPreferences");
+      if (prefs) {
+        caches.prefs.set("userPreferences", prefs);
+      } else {
+        caches.prefs.set("userPreferences", {});
+      }
+    }
+
+    // Universal: sets (or overwrites) the state of an entity
+    async function setState(entityType, id, state, extraFields = {}) {
+      const store = TYPE_TO_STORE[entityType];
+      const obj = caches[store].get(id) || { id, t: Date.now() };
+      obj.state = state;
+      obj.t = Date.now();
+
+      // Auto-fill missing foreign keys if possible
+      // TODO: Replace 'Utils' with the module corresponding to the active site if you support multi-site
+      if (entityType === "season" && !obj.series_id) {
+        const seriesId = Utils.getSeriesIdFromSeasonId?.(id);
+        if (seriesId) {
+          obj.series_id = seriesId;
+        }
+      }
+      if (entityType === "episode") {
+        const seasonId = Utils.getSeasonIdFromEpisodeId?.(id);
+        if (seasonId && !obj.season_id) {
+          obj.season_id = seasonId;
+        }
+        const seriesId = Utils.getSeriesIdFromEpisodeId?.(id);
+        if (seriesId && !obj.series_id) {
+          obj.series_id = seriesId;
+        }
+      }
+
+      // Allow manual override
+      Object.assign(obj, extraFields);
+
+      await DatabaseManager.set(store, id, obj);
+      caches[store].set(id, obj);
+
+      notify &&
+        notify({
+          type: entityType.toUpperCase() + "_CHANGE",
+          payload: { id, state, ...extraFields },
+        });
+    }
+
+    // Universal: removes an entity
+    async function remove(entityType, id) {
+      const store = TYPE_TO_STORE[entityType];
+      await DatabaseManager.delete(store, id);
+      caches[store].delete(id);
+      notify && notify({ type: entityType.toUpperCase() + "_REMOVE", payload: { id } });
+    }
+
+    // Universal: get object by id
+    function get(entityType, id) {
+      const store = TYPE_TO_STORE[entityType];
+      return caches[store].get(id) || null;
+    }
+
+    // Universal: get all objects of a type by state
+    function getByState(entityType, state) {
+      const store = TYPE_TO_STORE[entityType];
+      return Array.from(caches[store].values()).filter((o) => o.state === state);
+    }
+
+    // Universal: get all objects of a type (unfiltered)
+    function getAll(entityType) {
+      const store = TYPE_TO_STORE[entityType];
+      return Array.from(caches[store].values());
+    }
+
+    // Advanced search: e.g., all seasons of a series in state X
+    function getSeasonsBySeriesAndState(seriesId, state = null) {
+      const store = caches.Seasons;
+      return Array.from(store.values()).filter(
+        (s) => s.series_id === seriesId && (state ? s.state === state : true),
+      );
+    }
+
+    // Advanced search: all episodes of a season in a state
+    function getEpisodesBySeasonAndState(seasonId, state = null) {
+      const store = caches.Episodes;
+      return Array.from(store.values()).filter(
+        (e) => e.season_id === seasonId && (state ? e.state === state : true),
+      );
+    }
+
+    // Get all seasons for a specific series
+    function getSeasonsForSeries(seriesId) {
+      return Array.from(caches.Seasons.values())
+        .filter((season) => season.series_id === seriesId)
+        .map((season) => season.id);
+    }
+
+    // Get all episodes for a specific season
+    function getEpisodesForSeason(seasonId) {
+      return Array.from(caches.Episodes.values())
+        .filter((ep) => ep.season_id === seasonId)
+        .map((ep) => ep.id);
+    }
+
+    // Universal: get status of an entity (returns STATE_UNTRACKED if not found)
+    function getStatus(entityType, id) {
+      const obj = get(entityType, id);
+      return obj ? obj.state : STATE_UNTRACKED;
+    }
+
+    // Get user preferences
+    function getPrefs() {
+      return caches.prefs.get("userPreferences") || {};
+    }
+
+    // Set user preferences
+    async function setPrefs(newPrefs) {
+      const mergedPrefs = { ...getPrefs(), ...newPrefs };
+      caches.prefs.set("userPreferences", mergedPrefs);
+      await DatabaseManager.set(DB_STORE_PREFS, "userPreferences", mergedPrefs).catch(
+        console.error,
+      );
+      return mergedPrefs;
+    }
+
+    // Row Highlight
+    function isRowHighlightOn() {
+      const prefs = getPrefs();
+      return prefs.rowHighlight !== undefined ? prefs.rowHighlight : Constants.DEFAULT_ROW_HL;
+    }
+
+    // User Language
+    function getUserLang() {
+      const prefs = getPrefs();
+      return prefs.userLang || Constants.DEFAULT_LANG;
+    }
+
+    async function clear(entityType) {
+      const store = TYPE_TO_STORE[entityType];
+      await DatabaseManager.clear(store);
+      caches[store].clear();
+      notify && notify({ type: entityType.toUpperCase() + "_CLEAR" });
+    }
+
+    const subscribers = [];
+    function subscribe(fn) {
+      subscribers.push(fn);
+    }
+
+    function notify(change) {
+      for (const fn of subscribers) {
         try {
-          const [seenKeys, watchingKeys, completedKeys, seenMoviesKeys, rawPrefs] =
-            await Promise.all([
-              DatabaseManager.getAllKeys(Constants.DB_STORE_SEEN),
-              DatabaseManager.getAllKeys(Constants.DB_STORE_WATCHING),
-              DatabaseManager.getAllKeys(Constants.DB_STORE_COMPLETED),
-              DatabaseManager.getAllKeys(Constants.DB_STORE_SEEN_MOVIES),
-              GM.getValue(Constants.PREFS_KEY, "{}"),
-            ]);
-          state.seenSet = new Set(seenKeys);
-          state.watchingSet = new Set(watchingKeys);
-          state.completedSet = new Set(completedKeys);
-          state.seenMoviesSet = new Set(seenMoviesKeys);
-          state.prefs = JSON.parse(rawPrefs);
-          broadcast({ type: "INIT", payload: { oldPrefs: {}, newPrefs: state.prefs } });
-        } catch (error) {
-          console.error("[Store] Failed to load initial state:", error);
-          UIManager.showToast(I18n.t("toastErrorLoading"));
+          fn(change);
+        } catch (e) {
+          console.error(e);
         }
-      },
-      async setSeen(id, seen = true) {
-        await DatabaseManager[seen ? "set" : "delete"](Constants.DB_STORE_SEEN, id, {
-          t: Date.now(),
-        });
-        state.seenSet[seen ? "add" : "delete"](id);
-        broadcast({ type: "SEEN_CHANGE", payload: { id } });
-      },
-      async setWatching(id, watching = true) {
-        await DatabaseManager[watching ? "set" : "delete"](Constants.DB_STORE_WATCHING, id, {
-          t: Date.now(),
-        });
-        state.watchingSet[watching ? "add" : "delete"](id);
-        if (watching && state.completedSet.has(id)) {
-          await DatabaseManager.delete(Constants.DB_STORE_COMPLETED, id);
-          state.completedSet.delete(id);
-          broadcast({ type: "COMPLETED_CHANGE", payload: { id } });
-        }
-        broadcast({ type: "WATCHING_CHANGE", payload: { id } });
-      },
-      async setCompleted(id, completed = true) {
-        await DatabaseManager[completed ? "set" : "delete"](Constants.DB_STORE_COMPLETED, id, {
-          t: Date.now(),
-        });
-        state.completedSet[completed ? "add" : "delete"](id);
-        if (completed && state.watchingSet.has(id)) {
-          await DatabaseManager.delete(Constants.DB_STORE_WATCHING, id);
-          state.watchingSet.delete(id);
-          broadcast({ type: "WATCHING_CHANGE", payload: { id } });
-        }
-        broadcast({ type: "COMPLETED_CHANGE", payload: { id } });
-      },
-      async setMovieSeen(id, seen = true) {
-        await DatabaseManager[seen ? "set" : "delete"](Constants.DB_STORE_SEEN_MOVIES, id, {
-          t: Date.now(),
-        });
-        state.seenMoviesSet[seen ? "add" : "delete"](id);
-        broadcast({ type: "MOVIE_SEEN_CHANGE", payload: { id } });
-      },
-      async setPrefs(newPrefs) {
-        const oldPrefs = { ...state.prefs };
-        state.prefs = newPrefs;
-        await GM.setValue(Constants.PREFS_KEY, JSON.stringify(newPrefs));
-        broadcast({ type: "PREFS_CHANGE", payload: { oldPrefs, newPrefs } });
-      },
-      receiveSync(id, seen) {
-        if (seen) {
-          state.seenSet.add(id);
-        } else {
-          state.seenSet.delete(id);
-        }
-        broadcast({ type: "SEEN_CHANGE", payload: { id, seen } });
-      },
-      async clearAllData() {
-        state.seenSet.clear();
-        state.watchingSet.clear();
-        state.completedSet.clear();
-        state.seenMoviesSet.clear();
-        await Promise.all([
-          DatabaseManager.clear(Constants.DB_STORE_SEEN),
-          DatabaseManager.clear(Constants.DB_STORE_WATCHING),
-          DatabaseManager.clear(Constants.DB_STORE_COMPLETED),
-          DatabaseManager.clear(Constants.DB_STORE_SEEN_MOVIES),
-        ]);
-        broadcast({ type: "CLEAR_ALL" });
-      },
-      async exportData() {
-        const [seenKeys, watchingKeys, completedKeys, seenMoviesKeys] = await Promise.all([
-          DatabaseManager.getAllKeys(Constants.DB_STORE_SEEN),
-          DatabaseManager.getAllKeys(Constants.DB_STORE_WATCHING),
-          DatabaseManager.getAllKeys(Constants.DB_STORE_COMPLETED),
-          DatabaseManager.getAllKeys(Constants.DB_STORE_SEEN_MOVIES),
-        ]);
-        const [seenVals, watchingVals, completedVals, seenMoviesVals] = await Promise.all([
-          DatabaseManager.getAll(Constants.DB_STORE_SEEN),
-          DatabaseManager.getAll(Constants.DB_STORE_WATCHING),
-          DatabaseManager.getAll(Constants.DB_STORE_COMPLETED),
-          DatabaseManager.getAll(Constants.DB_STORE_SEEN_MOVIES),
-        ]);
-        const zip = (keys, vals) =>
-          keys.reduce((acc, k, i) => {
-            acc[k] = vals[i];
-            return acc;
-          }, {});
-        return {
-          seen: zip(seenKeys, seenVals),
-          watching: zip(watchingKeys, watchingVals),
-          completed: zip(completedKeys, completedVals),
-          seenMovies: zip(seenMoviesKeys, seenMoviesVals),
-        };
-      },
+      }
+    }
+
+    /**
+     * Handles synchronization events from other tabs (BroadcastChannel).
+     * Only used for episodes and movies.
+     * @param {string} id - The unique identifier of the item.
+     * @param {boolean} seen - Whether the item is marked as seen.
+     */
+    function receiveSync(id, seen) {
+      if (!id) {
+        return;
+      }
+      // Detect type by path prefix
+      let type = null;
+      if (id.startsWith("/episode/")) {
+        type = "episode";
+      }
+      if (id.startsWith("/movie/")) {
+        type = "movie";
+      }
+      if (!type) {
+        return;
+      }
+      if (seen) {
+        setState(type, id, "seen");
+      } else {
+        remove(type, id);
+      }
+    }
+
+    // Expose API
+    return {
+      load,
+      setState,
+      remove,
+      get,
+      getByState,
+      getAll,
+      getSeasonsBySeriesAndState,
+      getEpisodesBySeasonAndState,
+      getSeasonsForSeries,
+      getEpisodesForSeason,
+      getStatus,
+      getPrefs,
+      setPrefs,
+      isRowHighlightOn,
+      getUserLang,
+      clear,
+      subscribe,
+      receiveSync,
     };
   })();
 
@@ -902,7 +1071,7 @@
       let titleKey;
       let ariaLabelKey;
 
-      if (type === "seen" || type === "movie") {
+      if (type === "episode" || type === "movie") {
         const isSet = status === "seen";
         textKey = isSet ? "seen" : "mark";
         titleKey = isSet ? "btnTitleSeen" : "btnTitleNotSeen";
@@ -910,11 +1079,11 @@
         btn.setAttribute("aria-pressed", String(isSet));
       } else if (type === "series" || type === "season") {
         switch (status) {
-          case Constants.STATE_COMPLETED:
+          case STATE_COMPLETED:
             textKey = "completed";
             titleKey = "btnTitleCompleted";
             break;
-          case Constants.STATE_WATCHING:
+          case STATE_WATCHING:
             textKey = "watching";
             titleKey = "btnTitleWatching";
             break;
@@ -923,7 +1092,7 @@
             titleKey = "btnTitleNotWatching";
         }
         ariaLabelKey = "btnToggleWatching";
-        btn.setAttribute("aria-pressed", String(status === Constants.STATE_COMPLETED));
+        btn.setAttribute("aria-pressed", String(status === STATE_COMPLETED));
       } else {
         console.error(`Unhandled type: ${type}`);
         return;
@@ -979,11 +1148,14 @@
      * Applies or removes visual classes for state.
      */
     const updateItem = (item, type, status) => {
-      if (type === "seen" || type === "movie") {
+      if (type === "episode" || type === "movie") {
         item.classList.toggle(Constants.ITEM_SEEN_CLASS, status === "seen");
       } else if (type === "series" || type === "season") {
-        item.classList.toggle(Constants.ITEM_WATCHING_CLASS, status === Constants.STATE_WATCHING);
-        item.classList.toggle(Constants.ITEM_COMPLETED_CLASS, status === Constants.STATE_COMPLETED);
+        item.classList.toggle(Constants.ITEM_WATCHING_CLASS, status === STATE_WATCHING);
+        item.classList.toggle(Constants.ITEM_COMPLETED_CLASS, status === STATE_COMPLETED);
+      } else {
+        console.error(`Unhandled type in updateItem: ${type}`);
+        return;
       }
       const btn =
         item.querySelector(`.${Constants.BTN_CLASS}[${Constants.BTN_TYPE_ATTR}="${type}"]`) ||
@@ -996,17 +1168,12 @@
     /**
      * Decorates the item (row or card) with the button and state.
      */
-    const decorateItem = (
-      item,
-      { type, selector, onToggle, isSetFn, getStatusFn, preferKind = null },
-    ) => {
+    const decorateItem = (item, { type, selector, onToggle, preferKind = null }) => {
       if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === type) {
         return;
       }
       // Store kind if relevant
-      if (type === "series" && preferKind) {
-        item.setAttribute(Constants.KIND_ATTR, preferKind);
-      } else if (type === "season" && preferKind) {
+      if ((type === "series" || type === "season") && preferKind) {
         item.setAttribute(Constants.KIND_ATTR, preferKind);
       }
 
@@ -1017,18 +1184,7 @@
 
       item.setAttribute(Constants.ITEM_DECORATED_ATTR, type);
 
-      let status;
-      if (type === "seen" || type === "movie") {
-        status = isSetFn(id) ? "seen" : "unseen";
-      } else if (type === "series" || type === "season") {
-        if (Store.isCompleted(id)) {
-          status = Constants.STATE_COMPLETED;
-        } else if (Store.isWatching(id)) {
-          status = Constants.STATE_WATCHING;
-        } else {
-          status = Constants.STATE_UNTRACKED;
-        }
-      }
+      const status = Store.getStatus(type, id);
 
       updateItem(item, type, status);
 
@@ -1060,7 +1216,7 @@
     /**
      * Refreshes UI for the given id.
      */
-    const updateItemUI = (id, { isSetFn, getStatusFn, type }) => {
+    const updateItemUI = (id, { type }) => {
       for (const item of Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="${type}"]`)) {
         const preferKind =
           type === "series" || type === "season" ? item.getAttribute(Constants.KIND_ATTR) : null;
@@ -1068,18 +1224,8 @@
         if (!matchesId) {
           continue;
         }
-        let status;
-        if (type === "seen" || type === "movie") {
-          status = isSetFn(id) ? "seen" : "unseen";
-        } else if (type === "series" || type === "season") {
-          if (Store.isCompleted(id)) {
-            status = Constants.STATE_COMPLETED;
-          } else if (Store.isWatching(id)) {
-            status = Constants.STATE_WATCHING;
-          } else {
-            status = Constants.STATE_UNTRACKED;
-          }
-        }
+        const status = Store.getStatus(type, id);
+
         // This method updates the button's text, class, and attributes
         updateItem(item, type, status);
       }
@@ -1117,12 +1263,11 @@
   const Settings = (() => {
     const exportJSON = async () => {
       try {
-        const keys = await DatabaseManager.getAllKeys();
-        const allData = await DatabaseManager.getAll();
         const exportObj = {};
-        keys.forEach((key, index) => {
-          exportObj[key] = allData[index];
-        });
+        for (const type of ["episode", "movie", "series", "season"]) {
+          // Change these types if you have more or fewer
+          exportObj[type] = await Store.getAll(type); // Should return an array of objects with id and state
+        }
         UIManager.showExport({
           title: I18n.t("exportTitle"),
           text: I18n.t("exportText"),
@@ -1133,6 +1278,7 @@
         UIManager.showToast(I18n.t("toastErrorExporting"));
       }
     };
+
     const importJSON = async () => {
       const txt = await UIManager.showPrompt({
         title: I18n.t("importTitle"),
@@ -1147,11 +1293,19 @@
         if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
           throw new Error("Invalid JSON format.");
         }
+        // Simple validation: expects an object by type, each an array of items {id, state}
+        const validTypes = ["episode", "movie", "series", "season"];
+        let total = 0;
+        for (const type of validTypes) {
+          if (!parsed[type]) {
+            continue;
+          }
+          total += parsed[type].length;
+        }
 
-        const count = Object.keys(parsed).length;
         const confirmed = await UIManager.showConfirm({
           title: I18n.t("confirmImportTitle"),
-          text: I18n.t("confirmImportText", { count }),
+          text: I18n.t("confirmImportText", { count: total }),
           okLabel: I18n.t("confirmImportOk"),
         });
         if (!confirmed) {
@@ -1159,23 +1313,30 @@
         }
 
         const progress = UIManager.showProgress("Importing...");
-        await Store.clearSeen();
+        // Clear all types first
+        for (const type of validTypes) {
+          await Store.clear(type);
+        }
         let importedCount = 0;
-        for (const key in parsed) {
-          if (Object.prototype.hasOwnProperty.call(parsed, key)) {
-            await Store.setSeen(key, true);
+        for (const type of validTypes) {
+          if (!parsed[type]) {
+            continue;
+          }
+          for (const entry of parsed[type]) {
+            await Store.setState(type, entry.id, entry.state);
             importedCount += 1;
-            progress.update((importedCount / count) * 100);
+            progress.update((importedCount / total) * 100);
           }
         }
         progress.close();
-        UIManager.showToast(I18n.t("toastImportSuccess", { count }));
+        UIManager.showToast(I18n.t("toastImportSuccess", { count: importedCount }));
         setTimeout(() => location.reload(), 1500);
       } catch (error) {
         console.error("Failed to import data:", error);
         UIManager.showToast(I18n.t("toastErrorImporting"));
       }
     };
+
     const resetAll = async () => {
       const confirmed = await UIManager.showConfirm({
         title: I18n.t("resetConfirmTitle"),
@@ -1188,7 +1349,9 @@
       }
 
       try {
-        await Store.clearSeen();
+        for (const type of ["episode", "movie", "series", "season"]) {
+          await Store.clear(type);
+        }
         UIManager.showToast(I18n.t("toastDataReset"));
         setTimeout(() => location.reload(), 1500);
       } catch (error) {
@@ -1215,7 +1378,7 @@
     };
 
     const changeLanguage = async (lang) => {
-      const { prefs } = Store.getState();
+      const { prefs } = Store.getPrefs();
       await Store.setPrefs({ ...prefs, userLang: lang });
     };
 
@@ -1230,7 +1393,7 @@
         {
           label: isHlOn ? I18n.t("disableHighlight") : I18n.t("enableHighlight"),
           onClick: async () => {
-            const { prefs } = Store.getState();
+            const { prefs } = Store.getPrefs();
             const newHighlightState = !isHlOn;
             await Store.setPrefs({ ...prefs, rowHighlight: newHighlightState });
             UIManager.showToast(
@@ -1305,10 +1468,9 @@
           continue;
         }
         ContentDecorator.decorateItem(item, {
-          type: "seen",
+          type: "episode",
           selector: Constants.EPISODE_LINK_SELECTOR,
           onToggle: handleToggle,
-          isSetFn: Store.isSeen,
         });
       }
 
@@ -1325,8 +1487,6 @@
           type: "series",
           selector: Constants.LINK_SELECTOR,
           onToggle: handleToggle,
-          isSetFn: Store.isWatching,
-          getStatusFn: Store.getSeriesStatus,
           preferKind: "series",
         });
       }
@@ -1347,8 +1507,6 @@
           type: "season",
           selector: Constants.LINK_SELECTOR,
           onToggle: handleToggle,
-          isSetFn: Store.isWatching,
-          getStatusFn: Store.getSeasonStatus,
           preferKind: "season",
         });
       }
@@ -1359,7 +1517,6 @@
           type: "movie",
           selector: Constants.LINK_SELECTOR,
           onToggle: handleToggle,
-          isSetFn: Store.isMovieSeen,
         });
       }
     };
@@ -1372,13 +1529,14 @@
      */
     const propagateWatchingState = async (episodeId) => {
       const { seasonId, seriesId } = Utils.getHierarchyFromEpisodePath(episodeId);
-      if (seasonId && !Store.isWatching(seasonId)) {
-        await Store.setWatching(seasonId, true);
+
+      if (seasonId && Store.getStatus("season", seasonId) !== STATE_WATCHING) {
+        await Store.setState("season", seasonId, STATE_WATCHING);
         const seasonName = Utils.getSeasonNameForId(seasonId);
         UIManager.showToast(I18n.t("toastAutoTrackSeason", { seasonName }));
       }
-      if (seriesId && !Store.isWatching(seriesId)) {
-        await Store.setWatching(seriesId, true);
+      if (seriesId && Store.getStatus("series", seriesId) !== STATE_WATCHING) {
+        await Store.setState("series", seriesId, STATE_WATCHING);
         const seriesName = Utils.getSeriesNameForId(seriesId);
         UIManager.showToast(I18n.t("toastAutoTrackSeries", { seriesName }));
       }
@@ -1387,83 +1545,100 @@
     /**
      * Handles item state changes and propagates them across hierarchy.
      */
-    const handleToggle = async (type, id, currentStatus, item) => {
+    const handleToggle = async (type, id, currentStatus) => {
       // Episodes
-      if (type === "seen") {
+      if (type === "episode") {
         const newSeen = currentStatus !== "seen";
-        await Store.setSeen(id, newSeen);
-
-        // Automatic propagation to season and series
-        const { seasonId, seriesId } = Utils.getHierarchyFromEpisodePath(id);
         if (newSeen) {
+          await Store.setState("episode", id, "seen");
           await propagateWatchingState(id);
+        } else {
+          await Store.remove("episode", id);
         }
-        ContentDecorator.updateItemUI(id, {
-          type: "seen",
-          isSetFn: Store.isSeen,
-        });
-        // Optional: update season/series in the UI
+
+        ContentDecorator.updateItemUI(id, { type: "episode" });
+        // Optional: visually update associated season and series
+        const { seasonId, seriesId } = Utils.getHierarchyFromEpisodePath(id);
         if (seasonId) {
-          ContentDecorator.updateItemUI(seasonId, {
-            type: "season",
-            isSetFn: Store.isWatching,
-            getStatusFn: Store.getSeriesStatus,
-          });
+          ContentDecorator.updateItemUI(seasonId, { type: "season" });
         }
         if (seriesId) {
-          ContentDecorator.updateItemUI(seriesId, {
-            type: "series",
-            isSetFn: Store.isWatching,
-            getStatusFn: Store.getSeriesStatus,
-          });
+          ContentDecorator.updateItemUI(seriesId, { type: "series" });
         }
         return;
       }
 
       // Series/Seasons
       if (type === "series" || type === "season") {
-        if (currentStatus === Constants.STATE_WATCHING) {
-          // Design decision: Mark as completed and propagate to all child seasons/episodes.
-          await Store.setCompleted(id, true);
-          const seasons = await Store.getSeasonsForSeries(id);
-          for (const seasonId of seasons) {
-            await Store.setCompleted(seasonId, true);
-            const episodes = await Store.getEpisodesForSeason(seasonId);
+        if (currentStatus === STATE_UNTRACKED) {
+          // UNTRACKED → WATCHING
+          await Store.setState(type, id, STATE_WATCHING);
+          // No propagation needed
+        } else if (currentStatus === STATE_WATCHING) {
+          // WATCHING → COMPLETED (and propagate)
+          await Store.setState(type, id, STATE_COMPLETED);
+
+          if (type === "series") {
+            // Mark all seasons and episodes as COMPLETED/SEEN
+            const childSeasons = await Store.getSeasonsForSeries(id);
+            for (const seasonId of childSeasons) {
+              await Store.setState("season", seasonId, STATE_COMPLETED);
+              ContentDecorator.updateItemUI(seasonId, { type: "season" });
+
+              const episodes = await Store.getEpisodesForSeason(seasonId);
+              for (const episodeId of episodes) {
+                await Store.setState("episode", episodeId, "seen");
+                ContentDecorator.updateItemUI(episodeId, { type: "episode" });
+              }
+            }
+          } else if (type === "season") {
+            // Mark all episodes of the season as SEEN
+            const episodes = await Store.getEpisodesForSeason(id);
             for (const episodeId of episodes) {
-              await Store.setSeen(episodeId, true);
+              await Store.setState("episode", episodeId, "seen");
+              ContentDecorator.updateItemUI(episodeId, { type: "episode" });
             }
           }
-        } else if (currentStatus === Constants.STATE_COMPLETED) {
-          // Design decision: Unmark as completed and revert all child seasons/episodes.
-          await Store.setCompleted(id, false);
-          const seasons = await Store.getSeasonsForSeries(id);
-          for (const seasonId of seasons) {
-            await Store.setCompleted(seasonId, false);
-            const episodes = await Store.getEpisodesForSeason(seasonId);
+        } else if (currentStatus === STATE_COMPLETED) {
+          // COMPLETED → UNTRACKED (remove tracking and propagate)
+          await Store.remove(type, id);
+
+          if (type === "series") {
+            const childSeasons = await Store.getSeasonsForSeries(id);
+            for (const seasonId of childSeasons) {
+              await Store.remove("season", seasonId);
+              ContentDecorator.updateItemUI(seasonId, { type: "season" });
+
+              const episodes = await Store.getEpisodesForSeason(seasonId);
+              for (const episodeId of episodes) {
+                await Store.remove("episode", episodeId);
+                ContentDecorator.updateItemUI(episodeId, { type: "episode" });
+              }
+            }
+          } else if (type === "season") {
+            const episodes = await Store.getEpisodesForSeason(id);
             for (const episodeId of episodes) {
-              await Store.setSeen(episodeId, false);
+              await Store.remove("episode", episodeId);
+              ContentDecorator.updateItemUI(episodeId, { type: "episode" });
             }
           }
-        } else {
-          // Design decision: Start watching this series/season.
-          await Store.setWatching(id, true);
         }
-        ContentDecorator.updateItemUI(id, {
-          type: "series",
-          isSetFn: Store.isWatching,
-          getStatusFn: Store.getSeriesStatus,
-        });
+
+        // Always update the main button for the series or season
+        ContentDecorator.updateItemUI(id, { type });
+
         return;
       }
 
       // Movies
       if (type === "movie") {
         const newSeen = currentStatus !== "seen";
-        await Store.setMovieSeen(id, newSeen);
-        ContentDecorator.updateItemUI(id, {
-          type: "movie",
-          isSetFn: Store.isMovieSeen,
-        });
+        if (newSeen) {
+          await Store.setState("movie", id, "seen");
+        } else {
+          await Store.remove("movie", id);
+        }
+        ContentDecorator.updateItemUI(id, { type: "movie" });
         return;
       }
     };
@@ -1490,17 +1665,27 @@
 
           const url = new URL(link.href, location.origin);
 
-          // Check if the path corresponds to an episode using the updated function
-          if (!Utils.isEpisodePathname(url.pathname)) {
-            return;
+          let type = null;
+          if (Utils.isEpisodePathname(url.pathname)) {
+            type = "episode";
+          } else if (Utils.isMoviePathname(url.pathname)) {
+            type = "movie";
+          } else {
+            return; // Not markable
           }
-          // Avoid marking if already seen
-          if (Store.isSeen(url.pathname)) {
+
+          // If already marked as seen, do nothing
+          if (Store.getStatus(type, url.pathname) === "seen") {
             return;
           }
 
-          // Mark the episode as seen and propagate the state
-          await handleToggle("seen", url.pathname, "unseen", link.closest("tr, .episode"));
+          // Mark as seen and propagate
+          await handleToggle(
+            type,
+            url.pathname,
+            Store.getStatus(type, url.pathname),
+            link.closest("tr, .episode, .movie"),
+          );
 
           // Synchronize across tabs
           if (syncChannel) {
@@ -1540,22 +1725,94 @@
           break;
         }
 
-        case "SEEN_CHANGE": {
+        // Series
+        case "SERIES_CHANGE": {
           ContentDecorator.updateItemUI(change.payload.id, {
-            type: "seen",
-            isSetFn: Store.isSeen,
+            type: "series",
           });
           break;
         }
 
-        case "CLEAR_SEEN": {
-          Utils.$$(`[${Constants.ITEM_SEEN_ATTR}]`).forEach(ContentDecorator.resetItemUI);
+        case "SERIES_REMOVE": {
+          ContentDecorator.updateItemUI(change.payload.id, {
+            type: "series",
+          });
           break;
         }
-        case "MOVIE_SEEN_CHANGE": {
+
+        case "SERIES_CLEAR": {
+          Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="series"]`).forEach((item) => {
+            const id = ContentDecorator.computeId(item, Constants.LINK_SELECTOR, "series");
+            ContentDecorator.updateItemUI(id, { type: "series" });
+          });
+          break;
+        }
+
+        // Seasons
+        case "SEASON_CHANGE": {
+          ContentDecorator.updateItemUI(change.payload.id, {
+            type: "season",
+          });
+          break;
+        }
+
+        case "SEASON_REMOVE": {
+          ContentDecorator.updateItemUI(change.payload.id, {
+            type: "season",
+          });
+          break;
+        }
+
+        case "SEASON_CLEAR": {
+          Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="season"]`).forEach((item) => {
+            const id = ContentDecorator.computeId(item, Constants.LINK_SELECTOR, "season");
+            ContentDecorator.updateItemUI(id, { type: "season" });
+          });
+          break;
+        }
+
+        // Episodes
+        case "EPISODE_CHANGE": {
+          ContentDecorator.updateItemUI(change.payload.id, {
+            type: "episode",
+          });
+          break;
+        }
+
+        case "EPISODE_REMOVE": {
+          ContentDecorator.updateItemUI(change.payload.id, {
+            type: "episode",
+          });
+          break;
+        }
+
+        case "EPISODE_CLEAR": {
+          Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="episode"]`).forEach((item) => {
+            const id = ContentDecorator.computeId(item, Constants.LINK_SELECTOR, "episode");
+            ContentDecorator.updateItemUI(id, { type: "episode" });
+          });
+          break;
+        }
+
+        // Movies
+        case "MOVIE_CHANGE": {
           ContentDecorator.updateItemUI(change.payload.id, {
             type: "movie",
-            isSetFn: Store.isMovieSeen,
+          });
+          break;
+        }
+
+        case "MOVIE_REMOVE": {
+          ContentDecorator.updateItemUI(change.payload.id, {
+            type: "movie",
+          });
+          break;
+        }
+
+        case "MOVIE_CLEAR": {
+          Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="movie"]`).forEach((item) => {
+            const id = ContentDecorator.computeId(item, Constants.LINK_SELECTOR, "movie");
+            ContentDecorator.updateItemUI(id, { type: "movie" });
           });
           break;
         }
@@ -1605,14 +1862,15 @@
 
       // Robust handling for tabs opened/restored before script update
       const currentPath = location.pathname;
-      if (Utils.isEpisodePathname(currentPath) && !Store.isSeen(currentPath)) {
-        // Register episode as seen and update UI immediately
-        await handleToggle(
-          "seen",
-          currentPath,
-          "unseen",
-          document.querySelector(Constants.EPISODE_ITEM_SELECTOR),
-        );
+      let type = null;
+      if (Utils.isEpisodePathname(currentPath)) {
+        type = "episode";
+      } else if (Utils.isMoviePathname(currentPath)) {
+        type = "movie";
+      }
+
+      if (type && Store.getStatus(type, currentPath) !== "seen") {
+        await handleToggle(type, currentPath, Store.getStatus(type, currentPath));
       }
     };
 
