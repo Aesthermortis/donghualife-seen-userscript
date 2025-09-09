@@ -1644,14 +1644,25 @@
     };
 
     const setupSyncChannel = () => {
-      if (!("BroadcastChannel" in window)) {
-        return;
+      if ("BroadcastChannel" in window) {
+        syncChannel = new BroadcastChannel(Constants.SYNC_CHANNEL_NAME);
+        syncChannel.onmessage = (event) => {
+          const { id, seen } = event.data;
+          Store.receiveSync(id, seen);
+        };
+      } else {
+        // Fallback to localStorage events
+        window.addEventListener("storage", (event) => {
+          if (event.key === Constants.SYNC_CHANNEL_NAME && event.newValue) {
+            try {
+              const data = JSON.parse(event.newValue);
+              Store.receiveSync(data.id, data.seen);
+            } catch (e) {
+              console.error("Error parsing sync data from localStorage", e);
+            }
+          }
+        });
       }
-      syncChannel = new BroadcastChannel(Constants.SYNC_CHANNEL_NAME);
-      syncChannel.onmessage = (event) => {
-        const { id, seen } = event.data;
-        Store.receiveSync(id, seen);
-      };
     };
 
     const setupGlobalClickListener = () => {
@@ -1690,6 +1701,14 @@
           // Synchronize across tabs
           if (syncChannel) {
             syncChannel.postMessage({ id: url.pathname, seen: true });
+          } else {
+            // Fallback: Trigger cross-tab sync via localStorage event
+            localStorage.setItem(
+              Constants.SYNC_CHANNEL_NAME,
+              JSON.stringify({ id: url.pathname, seen: true }),
+            );
+            // Remove immediately: ensures event only notifies, doesn't persist data
+            localStorage.removeItem(Constants.SYNC_CHANNEL_NAME);
           }
         },
         { capture: true, passive: false },
