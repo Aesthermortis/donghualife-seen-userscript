@@ -458,6 +458,24 @@
       }
       return Constants.MOVIE_PATH_PATTERNS.some((rx) => rx.test(pathname));
     },
+
+    /**
+     * Centralized async error handling (store, db, etc).
+     * @param {Function} task - async function performing the operation
+     * @param {Object} options - { errorMessageKey, logContext }
+     * @returns {Promise<any|null>} Result or null if error occurs
+     */
+    async withErrorHandling(task, { errorMessageKey, logContext = "" } = {}) {
+      try {
+        return await task();
+      } catch (error) {
+        console.error(`[DonghuaLife] ${logContext}:`, error);
+        if (errorMessageKey) {
+          UIManager.showToast(I18n.t(errorMessageKey));
+        }
+        return null;
+      }
+    },
   };
 
   /**
@@ -497,6 +515,8 @@
         toastErrorExporting: "Error exporting data.",
         toastErrorImporting: "Error: Invalid JSON data provided.",
         toastErrorResetting: "Error resetting data.",
+        toastErrorRemoving: "Error removing items.",
+        toastErrorClearing: "Error clearing items.",
         toastHighlightEnabled: "Row highlight enabled.",
         toastHighlightDisabled: "Row highlight disabled.",
         toastPrefsReset: "Display preferences have been reset.",
@@ -558,6 +578,8 @@
         toastErrorExporting: "Error al exportar los datos.",
         toastErrorImporting: "Error: El formato JSON proporcionado no es válido.",
         toastErrorResetting: "Error al restablecer los datos.",
+        toastErrorRemoving: "Error al eliminar los elementos.",
+        toastErrorClearing: "Error al limpiar los elementos.",
         toastHighlightEnabled: "Resaltado de fila activado.",
         toastHighlightDisabled: "Resaltado de fila desactivado.",
         toastPrefsReset: "Las preferencias de visualización han sido restablecidas.",
@@ -857,22 +879,38 @@
       // Allow manual override
       Object.assign(obj, extraFields);
 
-      await DatabaseManager.set(store, id, obj);
-      caches[store].set(id, obj);
+      return Utils.withErrorHandling(
+        async () => {
+          await DatabaseManager.set(store, id, obj);
+          caches[store].set(id, obj);
 
-      notify &&
-        notify({
-          type: entityType.toUpperCase() + "_CHANGE",
-          payload: { id, state, ...extraFields },
-        });
+          notify &&
+            notify({
+              type: entityType.toUpperCase() + "_CHANGE",
+              payload: { id, state, ...extraFields },
+            });
+        },
+        {
+          errorMessageKey: "toastErrorSaving",
+          logContext: `Error saving state for store=${store}, id=${id}`,
+        },
+      );
     }
 
     // Universal: removes an entity
     async function remove(entityType, id) {
       const store = TYPE_TO_STORE[entityType];
-      await DatabaseManager.delete(store, id);
-      caches[store].delete(id);
-      notify && notify({ type: entityType.toUpperCase() + "_REMOVE", payload: { id } });
+      return Utils.withErrorHandling(
+        async () => {
+          await DatabaseManager.delete(store, id);
+          caches[store].delete(id);
+          notify && notify({ type: entityType.toUpperCase() + "_REMOVE", payload: { id } });
+        },
+        {
+          errorMessageKey: "toastErrorRemoving",
+          logContext: `Error removing store=${store}, id=${id}`,
+        },
+      );
     }
 
     // Universal: get object by id
@@ -958,9 +996,14 @@
 
     async function clear(entityType) {
       const store = TYPE_TO_STORE[entityType];
-      await DatabaseManager.clear(store);
-      caches[store].clear();
-      notify && notify({ type: entityType.toUpperCase() + "_CLEAR" });
+      return Utils.withErrorHandling(
+        async () => {
+          await DatabaseManager.clear(store);
+          caches[store].clear();
+          notify && notify({ type: entityType.toUpperCase() + "_CLEAR" });
+        },
+        { errorMessageKey: "toastErrorClearing", logContext: `Error clearing store=${store}` },
+      );
     }
 
     const subscribers = [];
