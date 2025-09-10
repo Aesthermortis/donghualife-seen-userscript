@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DonghuaLife – Mark Watched Episodes (✅)
 // @namespace    us_dhl_seen
-// @version      3.0.0
+// @version      3.1.0
 // @description  Adds a button to mark watched episodes, syncs status across tabs, and provides data management tools.
 // @author       Aesthermortis
 // @match        *://*.donghualife.com/*
@@ -81,28 +81,6 @@
     SEASON_ITEM_SELECTOR: ".serie, .season, .views-row .season, .listado-seasons .season, .titulo",
     SERIES_ITEM_SELECTOR: ".series, .views-row .serie, .listado-series .serie, .titulo",
     MOVIE_ITEM_SELECTOR: ".movie, .views-row .movie, .listado-movies .movie",
-
-    // Patterns
-    EPISODE_PATH_PATTERNS: [
-      /\/episode\//i,
-      /\/watch\//i,
-      /\/capitulo\//i,
-      /\/ver\//i,
-      /\/ep\//i,
-      /\/e\//i,
-      /\/[0-9]+\/?$/i,
-      /\/[^/]+\/[0-9]+/i,
-    ],
-
-    MOVIE_PATH_PATTERNS: [
-      /\/movie\//i,
-      /\/pelicula\//i,
-      /\/film\//i,
-      /\/movies\//i,
-      /\/ver-pelicula\//i,
-    ],
-
-    EXCLUDED_PATH_PATTERNS: [/\/user\//i, /\/search\//i, /\/category\//i],
 
     // Defaults
     DEFAULT_ROW_HL: false,
@@ -192,6 +170,515 @@
   `;
 
   /**
+   * PathAnalyzer API
+   * Centralizes all path analysis logic for the DonghuaLife UserScript
+   * @module PathAnalyzer
+   */
+  const PathAnalyzer = (() => {
+    // Entity type constants
+    const EntityType = {
+      EPISODE: "episode",
+      MOVIE: "movie",
+      SERIES: "series",
+      SEASON: "season",
+      UNKNOWN: "unknown",
+    };
+
+    // Path patterns configuration
+    const pathPatterns = {
+      episode: [
+        {
+          pattern: /^\/episode\/([^/-]+(?:-[^/-]+)*)-(\d+)-episodio-([^/]+)$/i,
+          type: "donghualife",
+        },
+        { pattern: /^\/episode\/(.+?)-(\d+)-(.+)$/i, type: "legacy" },
+        { pattern: /^\/watch\//i, type: "generic" },
+        { pattern: /^\/capitulo\//i, type: "generic" },
+        { pattern: /^\/ver\//i, type: "generic" },
+        { pattern: /^\/ep\//i, type: "generic" },
+        { pattern: /^\/e\//i, type: "generic" },
+      ],
+      movie: [
+        { pattern: /^\/movie\//i, type: "standard" },
+        { pattern: /^\/pelicula\//i, type: "spanish" },
+        { pattern: /^\/film\//i, type: "generic" },
+        { pattern: /^\/movies\//i, type: "list" },
+        { pattern: /^\/ver-pelicula\//i, type: "spanish" },
+      ],
+      series: [{ pattern: /^\/series\/([^/]+)$/i, type: "standard" }],
+      season: [
+        { pattern: /^\/season\/([^/-]+(?:-[^/-]+)*)-(\d+)$/i, type: "standard" },
+        { pattern: /^\/season\/(.+)$/i, type: "simple" },
+      ],
+    };
+
+    const excludedPaths = [/\/user\//i, /\/search\//i, /\/category\//i, /\/admin\//i, /\/api\//i];
+
+    /**
+     * Main analysis function that returns comprehensive path information
+     * @param {string|URL|HTMLAnchorElement} input - Path to analyze (string, URL, or anchor element)
+     * @returns {PathInfo} Complete path information
+     */
+    function analyze(input) {
+      const pathname = extractPathname(input);
+
+      if (!pathname) {
+        return createErrorResult("Invalid input");
+      }
+
+      if (isExcluded(pathname)) {
+        return createExcludedResult(pathname);
+      }
+
+      // Try to identify the entity type
+      const entityInfo = identifyEntity(pathname);
+
+      if (entityInfo.type === EntityType.UNKNOWN) {
+        return createUnknownResult(pathname);
+      }
+
+      // Extract all related information
+      const result = {
+        pathname,
+        type: entityInfo.type,
+        id: pathname, // The pathname itself is the ID
+        format: entityInfo.format,
+        isValid: true,
+        error: null,
+      };
+
+      // Add entity-specific information
+      switch (entityInfo.type) {
+        case EntityType.EPISODE:
+          Object.assign(result, extractEpisodeInfo(pathname, entityInfo.format));
+          break;
+        case EntityType.SEASON:
+          Object.assign(result, extractSeasonInfo(pathname, entityInfo.format));
+          break;
+        case EntityType.SERIES:
+          Object.assign(result, extractSeriesInfo(pathname, entityInfo.format));
+          break;
+        case EntityType.MOVIE:
+          Object.assign(result, extractMovieInfo(pathname, entityInfo.format));
+          break;
+      }
+
+      // Add hierarchy information
+      result.hierarchy = buildHierarchy(result);
+
+      // Add metadata
+      result.metadata = extractMetadata(result);
+
+      return result;
+    }
+
+    /**
+     * Extract pathname from various input types
+     */
+    function extractPathname(input) {
+      if (!input) {
+        return null;
+      }
+
+      // String input
+      if (typeof input === "string") {
+        try {
+          // Check if it's already a pathname
+          if (input.startsWith("/")) {
+            return input;
+          }
+          // Try to parse as full URL
+          const url = new URL(input);
+          return url.pathname;
+        } catch {
+          return input.startsWith("/") ? input : null;
+        }
+      }
+
+      // URL object
+      if (input instanceof URL) {
+        return input.pathname;
+      }
+
+      // HTMLAnchorElement - Check for href property instead of instanceof
+      if (input.tagName === "A" && input.href) {
+        return new URL(input.href, window.location.origin).pathname;
+      }
+
+      // HTMLElement with href property
+      if (input.nodeType === 1 && input.href) {
+        return new URL(input.href, window.location.origin).pathname;
+      }
+
+      return null;
+    }
+
+    /**
+     * Check if path is excluded
+     */
+    function isExcluded(pathname) {
+      return excludedPaths.some((pattern) => pattern.test(pathname));
+    }
+
+    /**
+     * Identify entity type from pathname
+     */
+    function identifyEntity(pathname) {
+      for (const [type, patterns] of Object.entries(pathPatterns)) {
+        for (const { pattern, type: format } of patterns) {
+          if (pattern.test(pathname)) {
+            return { type, format };
+          }
+        }
+      }
+      return { type: EntityType.UNKNOWN, format: null };
+    }
+
+    /**
+     * Extract episode-specific information
+     */
+    function extractEpisodeInfo(pathname, format) {
+      const info = {
+        episodeNumber: null,
+        seriesSlug: null,
+        seasonNumber: null,
+        episodeSlug: null,
+      };
+
+      if (format === "donghualife") {
+        const match = pathname.match(/^\/episode\/([^/-]+(?:-[^/-]+)*)-(\d+)-episodio-([^/]+)$/i);
+        if (match) {
+          info.seriesSlug = match[1];
+          info.seasonNumber = parseInt(match[2], 10);
+          info.episodeSlug = match[3];
+        }
+      } else if (format === "legacy") {
+        const match = pathname.match(/^\/episode\/(.+?)-(\d+)-(.+)$/i);
+        if (match) {
+          info.seriesSlug = match[1];
+          info.seasonNumber = parseInt(match[2], 10);
+          info.episodeSlug = match[3];
+        }
+      }
+
+      return info;
+    }
+
+    /**
+     * Extract season-specific information
+     */
+    function extractSeasonInfo(pathname, format) {
+      const info = {
+        seriesSlug: null,
+        seasonNumber: null,
+      };
+
+      if (format === "standard") {
+        const match = pathname.match(/^\/season\/([^/-]+(?:-[^/-]+)*)-(\d+)$/i);
+        if (match) {
+          info.seriesSlug = match[1];
+          info.seasonNumber = parseInt(match[2], 10);
+        }
+      } else if (format === "simple") {
+        const match = pathname.match(/^\/season\/(.+)$/i);
+        if (match) {
+          const slug = match[1];
+          const lastDashIndex = slug.lastIndexOf("-");
+          if (lastDashIndex > 0) {
+            const possibleNumber = slug.substring(lastDashIndex + 1);
+            if (/^\d+$/.test(possibleNumber)) {
+              info.seriesSlug = slug.substring(0, lastDashIndex);
+              info.seasonNumber = parseInt(possibleNumber, 10);
+            } else {
+              info.seriesSlug = slug;
+            }
+          }
+        }
+      }
+
+      return info;
+    }
+
+    /**
+     * Extract series-specific information
+     */
+    function extractSeriesInfo(pathname, format) {
+      const info = {
+        seriesSlug: null,
+      };
+
+      const match = pathname.match(/^\/series\/([^/]+)$/i);
+      if (match) {
+        info.seriesSlug = match[1];
+      }
+
+      return info;
+    }
+
+    /**
+     * Extract movie-specific information
+     */
+    function extractMovieInfo(pathname, format) {
+      const info = {
+        movieSlug: null,
+        language: format === "spanish" ? "es" : "en",
+      };
+
+      const match = pathname.match(/^\/(movie|pelicula|film|movies|ver-pelicula)\/([^/]+)$/i);
+      if (match) {
+        info.movieSlug = match[2];
+      }
+
+      return info;
+    }
+
+    /**
+     * Build hierarchy information
+     */
+    function buildHierarchy(entityInfo) {
+      const hierarchy = {
+        seriesId: null,
+        seasonId: null,
+        episodeId: null,
+        movieId: null,
+      };
+
+      switch (entityInfo.type) {
+        case EntityType.EPISODE:
+          hierarchy.episodeId = entityInfo.id;
+          if (entityInfo.seriesSlug && entityInfo.seasonNumber) {
+            hierarchy.seasonId = `/season/${entityInfo.seriesSlug}-${entityInfo.seasonNumber}`;
+            hierarchy.seriesId = `/series/${entityInfo.seriesSlug}`;
+          }
+          break;
+
+        case EntityType.SEASON:
+          hierarchy.seasonId = entityInfo.id;
+          if (entityInfo.seriesSlug) {
+            hierarchy.seriesId = `/series/${entityInfo.seriesSlug}`;
+          }
+          break;
+
+        case EntityType.SERIES:
+          hierarchy.seriesId = entityInfo.id;
+          break;
+
+        case EntityType.MOVIE:
+          hierarchy.movieId = entityInfo.id;
+          break;
+      }
+
+      return hierarchy;
+    }
+
+    /**
+     * Extract metadata (could be extended to extract from DOM if needed)
+     */
+    function extractMetadata(entityInfo) {
+      return {
+        slug: entityInfo.seriesSlug || entityInfo.movieSlug || null,
+        title: null, // Could be populated from DOM if element is provided
+        extractedAt: Date.now(),
+      };
+    }
+
+    /**
+     * Helper function to create error result
+     */
+    function createErrorResult(error) {
+      return {
+        pathname: null,
+        type: EntityType.UNKNOWN,
+        id: null,
+        isValid: false,
+        error,
+        hierarchy: {},
+        metadata: {},
+      };
+    }
+
+    /**
+     * Helper function to create excluded result
+     */
+    function createExcludedResult(pathname) {
+      return {
+        pathname,
+        type: EntityType.UNKNOWN,
+        id: null,
+        isValid: false,
+        error: "Path is excluded",
+        isExcluded: true,
+        hierarchy: {},
+        metadata: {},
+      };
+    }
+
+    /**
+     * Helper function to create unknown result
+     */
+    function createUnknownResult(pathname) {
+      return {
+        pathname,
+        type: EntityType.UNKNOWN,
+        id: null,
+        isValid: false,
+        error: "Unknown entity type",
+        hierarchy: {},
+        metadata: {},
+      };
+    }
+
+    /**
+     * Batch analyze multiple paths
+     * @param {Array} inputs - Array of paths to analyze
+     * @returns {Array<PathInfo>} Array of results
+     */
+    function analyzeBatch(inputs) {
+      return inputs.map((input) => analyze(input));
+    }
+
+    /**
+     * Get parent path for a given path
+     * @param {string} pathname - Path to analyze
+     * @returns {string|null} Parent path or null
+     */
+    function getParent(pathname) {
+      const result = analyze(pathname);
+
+      if (!result.isValid) {
+        return null;
+      }
+
+      switch (result.type) {
+        case EntityType.EPISODE:
+          return result.hierarchy.seasonId;
+        case EntityType.SEASON:
+          return result.hierarchy.seriesId;
+        default:
+          return null;
+      }
+    }
+
+    /**
+     * Get all parent paths in hierarchy
+     * @param {string} pathname - Path to analyze
+     * @returns {Array<string>} Array of parent paths from immediate to root
+     */
+    function getAncestors(pathname) {
+      const result = analyze(pathname);
+      const ancestors = [];
+
+      if (!result.isValid) {
+        return ancestors;
+      }
+
+      switch (result.type) {
+        case EntityType.EPISODE:
+          if (result.hierarchy.seasonId) {
+            ancestors.push(result.hierarchy.seasonId);
+          }
+          if (result.hierarchy.seriesId) {
+            ancestors.push(result.hierarchy.seriesId);
+          }
+          break;
+        case EntityType.SEASON:
+          if (result.hierarchy.seriesId) {
+            ancestors.push(result.hierarchy.seriesId);
+          }
+          break;
+      }
+
+      return ancestors;
+    }
+
+    /**
+     * Check if a path is of a specific type
+     * @param {string} pathname - Path to check
+     * @param {string} type - Type to check against
+     * @returns {boolean}
+     */
+    function isType(pathname, type) {
+      const result = analyze(pathname);
+      return result.isValid && result.type === type;
+    }
+
+    /**
+     * Get formatted display information
+     * @param {string} pathname - Path to format
+     * @returns {Object} Formatted information
+     */
+    function getDisplayInfo(pathname) {
+      const result = analyze(pathname);
+
+      if (!result.isValid) {
+        return { title: "Unknown", subtitle: null };
+      }
+
+      switch (result.type) {
+        case EntityType.EPISODE:
+          return {
+            title: `Episode ${result.episodeSlug || "Unknown"}`,
+            subtitle: result.seasonNumber ? `Season ${result.seasonNumber}` : null,
+            series: result.seriesSlug ? slugToTitle(result.seriesSlug) : null,
+          };
+
+        case EntityType.SEASON:
+          return {
+            title: result.seasonNumber ? `Season ${result.seasonNumber}` : "Season",
+            subtitle: result.seriesSlug ? slugToTitle(result.seriesSlug) : null,
+          };
+
+        case EntityType.SERIES:
+          return {
+            title: result.seriesSlug ? slugToTitle(result.seriesSlug) : "Series",
+            subtitle: "Series",
+          };
+
+        case EntityType.MOVIE:
+          return {
+            title: result.movieSlug ? slugToTitle(result.movieSlug) : "Movie",
+            subtitle: "Movie",
+          };
+
+        default:
+          return { title: "Unknown", subtitle: null };
+      }
+    }
+
+    /**
+     * Convert slug to title case
+     */
+    function slugToTitle(slug) {
+      return slug.replace(/[-_]+/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
+    }
+
+    // Public API
+    return {
+      // Main functions
+      analyze,
+      analyzeBatch,
+
+      // Helper functions
+      getParent,
+      getAncestors,
+      isType,
+      getDisplayInfo,
+
+      // Type checkers
+      isEpisode: (pathname) => isType(pathname, EntityType.EPISODE),
+      isMovie: (pathname) => isType(pathname, EntityType.MOVIE),
+      isSeries: (pathname) => isType(pathname, EntityType.SERIES),
+      isSeason: (pathname) => isType(pathname, EntityType.SEASON),
+
+      // Constants
+      EntityType,
+
+      // Utility
+      extractPathname,
+    };
+  })();
+
+  /**
    * @module Utils
    * @description Provides utility functions for DOM manipulation and data parsing.
    */
@@ -211,119 +698,6 @@
      * @returns {Element[]}
      */
     $$: (sel, root = document) => Array.from(root.querySelectorAll(sel)),
-
-    /**
-     * Converts slug to title case.
-     * @param {string} slug
-     * @returns {string}
-     */
-    slugToTitle: (slug) => slug.replace(/[-_]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()),
-
-    /**
-     * Extracts seriesId and seasonId from an episode path.
-     * Supports DonghuaLife format and legacy slugs for robustness.
-     * @param {string} episodePath
-     * @returns {{ seasonId: string|null, seriesId: string|null }}
-     */
-    getHierarchyFromEpisodePath: (episodePath) => {
-      if (typeof episodePath !== "string") {
-        return { seriesId: null, seasonId: null };
-      }
-
-      // DonghuaLife format: /episode/{series-slug}-{season-number}-episodio-{episode-id}
-      const dlRx = /^\/episode\/([^/-]+(?:-[^/-]+)*)-(\d+)-episodio-([^/]+)$/i;
-      const matchDl = episodePath.match(dlRx);
-
-      if (matchDl) {
-        const seriesSlug = matchDl[1];
-        const seasonNum = matchDl[2];
-        return {
-          seriesId: `/series/${seriesSlug}`,
-          seasonId: `/season/${seriesSlug}-${seasonNum}`,
-        };
-      }
-
-      // Try to match /series/{sid}/season/{stid}/episode/{eid}
-      const parts = episodePath.split("/");
-      let seriesId = null;
-      let seasonId = null;
-      for (let i = 0; i < parts.length; i += 1) {
-        if (parts[i] === "series" && parts[i + 1]) {
-          seriesId = `/series/${parts[i + 1]}`;
-        }
-        if (parts[i] === "season" && parts[i + 1]) {
-          seasonId = `/season/${parts[i + 1]}`;
-        }
-      }
-
-      // Fallback to previous slug-based extraction if needed
-      if (!seriesId || !seasonId) {
-        const legacyRx = /^\/episode\/(.+?)-(\d+)-/i;
-        const matchLegacy = episodePath.match(legacyRx);
-        if (matchLegacy) {
-          const slug = matchLegacy[1];
-          const num = matchLegacy[2];
-          return {
-            seriesId: `/series/${slug}`,
-            seasonId: `/season/${slug}-${num}`,
-          };
-        }
-      }
-      return { seasonId, seriesId };
-    },
-    /**
-     * Extracts the seriesId from a seasonId.
-     * @param {string} seasonId
-     * @returns {string|null}
-     */
-    getSeriesIdFromSeasonId: (seasonId) => {
-      // E.g.: /season/one-piece-2 → /series/one-piece
-      const m = seasonId.match(/^\/season\/(.+?)(?:-\d+)?$/i);
-      if (!m) {
-        return null;
-      }
-      return `/series/${m[1].replace(/-\d+$/, "")}`;
-    },
-
-    /**
-     * Extracts the seasonId from an episodeId.
-     * @param {string} episodeId
-     * @returns {string|null}
-     */
-    getSeasonIdFromEpisodeId: (episodeId) => {
-      // E.g.: /episode/one-piece-2-12 → /season/one-piece-2
-      const m = episodeId.match(/^\/episode\/(.+?-\d+)-/i);
-      if (!m) {
-        return null;
-      }
-      return `/season/${m[1]}`;
-    },
-
-    /**
-     * Extracts the seriesId from an episodeId.
-     * @param {string} episodeId
-     * @returns {string|null}
-     */
-    getSeriesIdFromEpisodeId: (episodeId) => {
-      // E.g.: /episode/one-piece-2-12 → /series/one-piece
-      const m = episodeId.match(/^\/episode\/(.+?)-\d+-/i);
-      if (!m) {
-        return null;
-      }
-      return `/series/${m[1]}`;
-    },
-
-    /**
-     * Returns { seriesId, seasonId } for any episodeId.
-     * @param {string} episodeId
-     * @returns {{ seriesId: string|null, seasonId: string|null }}
-     */
-    getHierarchyFromEpisodeId: (episodeId) => {
-      return {
-        seriesId: Utils.getSeriesIdFromEpisodeId(episodeId),
-        seasonId: Utils.getSeasonIdFromEpisodeId(episodeId),
-      };
-    },
 
     /**
      * Finds the series name for a given seriesId by searching the DOM.
@@ -433,30 +807,6 @@
         clearTimeout(timeoutId);
         timeoutId = setTimeout(() => fn(...args), ms);
       };
-    },
-
-    /**
-     * Checks if the pathname is an episode.
-     * @param {string} pathname
-     * @returns {boolean}
-     */
-    isEpisodePathname: (pathname) => {
-      if (Constants.EXCLUDED_PATH_PATTERNS.some((rx) => rx.test(pathname))) {
-        return false;
-      }
-      return Constants.EPISODE_PATH_PATTERNS.some((rx) => rx.test(pathname));
-    },
-
-    /**
-     * Checks if the pathname is a movie.
-     * @param {string} pathname
-     * @returns {boolean}
-     */
-    isMoviePathname: (pathname) => {
-      if (Constants.EXCLUDED_PATH_PATTERNS.some((rx) => rx.test(pathname))) {
-        return false;
-      }
-      return Constants.MOVIE_PATH_PATTERNS.some((rx) => rx.test(pathname));
     },
 
     /**
@@ -857,33 +1207,31 @@
       obj.state = state;
       obj.t = Date.now();
 
-      // Auto-fill missing foreign keys if possible
-      // TODO: Replace 'Utils' with the module corresponding to the active site if you support multi-site
-      if (entityType === "season" && !obj.series_id) {
-        const seriesId = Utils.getSeriesIdFromSeasonId?.(id);
-        if (seriesId) {
-          obj.series_id = seriesId;
+      // Auto-fill series_id and season_id from path if missing
+      const pathInfo = PathAnalyzer.analyze(id);
+
+      if (pathInfo.isValid) {
+        if (entityType === "season" && !obj.series_id && pathInfo.hierarchy.seriesId) {
+          obj.series_id = pathInfo.hierarchy.seriesId;
         }
-      }
-      if (entityType === "episode") {
-        const seasonId = Utils.getSeasonIdFromEpisodeId?.(id);
-        if (seasonId && !obj.season_id) {
-          obj.season_id = seasonId;
-        }
-        const seriesId = Utils.getSeriesIdFromEpisodeId?.(id);
-        if (seriesId && !obj.series_id) {
-          obj.series_id = seriesId;
+
+        if (entityType === "episode") {
+          if (!obj.season_id && pathInfo.hierarchy.seasonId) {
+            obj.season_id = pathInfo.hierarchy.seasonId;
+          }
+          if (!obj.series_id && pathInfo.hierarchy.seriesId) {
+            obj.series_id = pathInfo.hierarchy.seriesId;
+          }
         }
       }
 
-      // Allow manual override
+      // Allow manual override of any fields
       Object.assign(obj, extraFields);
 
       return Utils.withErrorHandling(
         async () => {
           await DatabaseManager.set(store, id, obj);
           caches[store].set(id, obj);
-
           notify &&
             notify({
               type: entityType.toUpperCase() + "_CHANGE",
@@ -1031,21 +1379,25 @@
       if (!id) {
         return;
       }
-      // Detect type by path prefix
-      let type = null;
-      if (id.startsWith("/episode/")) {
-        type = "episode";
-      }
-      if (id.startsWith("/movie/")) {
-        type = "movie";
-      }
-      if (!type) {
+
+      const pathInfo = PathAnalyzer.analyze(id);
+
+      if (!pathInfo.isValid) {
         return;
       }
+
+      // Only synchronize episodes and movies
+      if (
+        pathInfo.type !== PathAnalyzer.EntityType.EPISODE &&
+        pathInfo.type !== PathAnalyzer.EntityType.MOVIE
+      ) {
+        return;
+      }
+
       if (seen) {
-        setState(type, id, "seen");
+        setState(pathInfo.type, id, "seen");
       } else {
-        remove(type, id);
+        remove(pathInfo.type, id);
       }
     }
 
@@ -1083,27 +1435,24 @@
      */
     const computeId = (element, selector, preferKind = null) => {
       let link = null;
+
+      // Find the most specific link according to the preferred type
       if (preferKind === "season") {
-        link = Utils.$("a[href^='/season/']", element) || null;
+        link = Utils.$("a[href^='/season/']", element);
       } else if (preferKind === "series") {
-        link = Utils.$("a[href^='/series/']", element) || null;
-      } else {
-        link =
-          Utils.$("a[href^='/season/']", element) ||
-          Utils.$("a[href^='/series/']", element) ||
-          null;
+        link = Utils.$("a[href^='/series/']", element);
       }
+
       if (!link) {
         link = Utils.$(selector, element);
       }
+
       if (!link?.href) {
         return null;
       }
-      try {
-        return new URL(link.href, location.origin).pathname;
-      } catch {
-        return null;
-      }
+
+      const result = PathAnalyzer.analyze(link.href);
+      return result.isValid ? result.id : null;
     };
 
     /**
@@ -1263,8 +1612,11 @@
       for (const item of Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="${type}"]`)) {
         const preferKind =
           type === "series" || type === "season" ? item.getAttribute(Constants.KIND_ATTR) : null;
-        const matchesId = computeId(item, Constants.LINK_SELECTOR, preferKind) === id;
-        if (!matchesId) {
+
+        // Use internal computeId
+        const itemId = computeId(item, Constants.LINK_SELECTOR, preferKind);
+
+        if (itemId !== id) {
           continue;
         }
         const status = Store.getStatus(type, id);
@@ -1421,8 +1773,12 @@
     };
 
     const changeLanguage = async (lang) => {
-      const { prefs } = Store.getPrefs();
-      await Store.setPrefs({ ...prefs, userLang: lang });
+      const currentPrefs = Store.getPrefs();
+      await Store.setPrefs({ ...currentPrefs, userLang: lang });
+
+      // Notify the change so the page reloads
+      UIManager.showToast(I18n.t("toastLangChanged"));
+      setTimeout(() => location.reload(), 1500);
     };
 
     const openMenu = () => {
@@ -1436,9 +1792,9 @@
         {
           label: isHlOn ? I18n.t("disableHighlight") : I18n.t("enableHighlight"),
           onClick: async () => {
-            const { prefs } = Store.getPrefs();
+            const currentPrefs = Store.getPrefs();
             const newHighlightState = !isHlOn;
-            await Store.setPrefs({ ...prefs, rowHighlight: newHighlightState });
+            await Store.setPrefs({ ...currentPrefs, rowHighlight: newHighlightState });
             UIManager.showToast(
               newHighlightState
                 ? I18n.t("toastHighlightEnabled")
@@ -1571,16 +1927,37 @@
      * @returns {Promise<void>}
      */
     const propagateWatchingState = async (episodeId) => {
-      const { seasonId, seriesId } = Utils.getHierarchyFromEpisodePath(episodeId);
+      const pathInfo = PathAnalyzer.analyze(episodeId);
+
+      if (!pathInfo.isValid || pathInfo.type !== PathAnalyzer.EntityType.EPISODE) {
+        return;
+      }
+
+      const { seasonId, seriesId } = pathInfo.hierarchy;
 
       if (seasonId && Store.getStatus("season", seasonId) !== STATE_WATCHING) {
-        await Store.setState("season", seasonId, STATE_WATCHING);
-        const seasonName = Utils.getSeasonNameForId(seasonId);
+        const extraFields = {};
+        if (seriesId) {
+          extraFields.series_id = seriesId;
+        }
+
+        await Store.setState("season", seasonId, STATE_WATCHING, extraFields);
+
+        // For the name, search in the DOM
+        const seasonLink = document.querySelector(`a[href="${seasonId}"]`);
+        const seasonName = seasonLink?.textContent?.trim() || "Unknown Season";
         UIManager.showToast(I18n.t("toastAutoTrackSeason", { seasonName }));
       }
+
       if (seriesId && Store.getStatus("series", seriesId) !== STATE_WATCHING) {
-        await Store.setState("series", seriesId, STATE_WATCHING);
-        const seriesName = Utils.getSeriesNameForId(seriesId);
+        const extraFields = {};
+
+        // For the name, search in the DOM
+        const seriesLink = document.querySelector(`a[href="${seriesId}"]`);
+        const seriesName = seriesLink?.textContent?.trim() || "Unknown Series";
+        extraFields.name = seriesName;
+
+        await Store.setState("series", seriesId, STATE_WATCHING, extraFields);
         UIManager.showToast(I18n.t("toastAutoTrackSeries", { seriesName }));
       }
     };
@@ -1600,13 +1977,16 @@
         }
 
         ContentDecorator.updateItemUI(id, { type: "episode" });
-        // Optional: visually update associated season and series
-        const { seasonId, seriesId } = Utils.getHierarchyFromEpisodePath(id);
-        if (seasonId) {
-          ContentDecorator.updateItemUI(seasonId, { type: "season" });
-        }
-        if (seriesId) {
-          ContentDecorator.updateItemUI(seriesId, { type: "series" });
+
+        // Visually update associated season and series
+        const pathInfo = PathAnalyzer.analyze(id);
+        if (pathInfo.isValid) {
+          if (pathInfo.hierarchy.seasonId) {
+            ContentDecorator.updateItemUI(pathInfo.hierarchy.seasonId, { type: "season" });
+          }
+          if (pathInfo.hierarchy.seriesId) {
+            ContentDecorator.updateItemUI(pathInfo.hierarchy.seriesId, { type: "series" });
+          }
         }
         return;
       }
@@ -1717,38 +2097,41 @@
             return;
           }
 
-          const url = new URL(link.href, location.origin);
+          const pathInfo = PathAnalyzer.analyze(link.href);
 
-          let type = null;
-          if (Utils.isEpisodePathname(url.pathname)) {
-            type = "episode";
-          } else if (Utils.isMoviePathname(url.pathname)) {
-            type = "movie";
-          } else {
-            return; // Not markable
+          if (!pathInfo.isValid) {
+            return;
+          }
+
+          // Only auto-mark episodes and movies when clicking
+          if (
+            pathInfo.type !== PathAnalyzer.EntityType.EPISODE &&
+            pathInfo.type !== PathAnalyzer.EntityType.MOVIE
+          ) {
+            return;
           }
 
           // If already marked as seen, do nothing
-          if (Store.getStatus(type, url.pathname) === "seen") {
+          if (Store.getStatus(pathInfo.type, pathInfo.id) === "seen") {
             return;
           }
 
           // Mark as seen and propagate
           await handleToggle(
-            type,
-            url.pathname,
-            Store.getStatus(type, url.pathname),
+            pathInfo.type,
+            pathInfo.id,
+            Store.getStatus(pathInfo.type, pathInfo.id),
             link.closest("tr, .episode, .movie"),
           );
 
           // Synchronize across tabs
           if (syncChannel) {
-            syncChannel.postMessage({ id: url.pathname, seen: true });
+            syncChannel.postMessage({ id: pathInfo.id, seen: true });
           } else {
             // Fallback: Trigger cross-tab sync via localStorage event
             localStorage.setItem(
               Constants.SYNC_CHANNEL_NAME,
-              JSON.stringify({ id: url.pathname, seen: true }),
+              JSON.stringify({ id: pathInfo.id, seen: true }),
             );
             // Remove immediately: ensures event only notifies, doesn't persist data
             localStorage.removeItem(Constants.SYNC_CHANNEL_NAME);
@@ -1922,25 +2305,20 @@
       // Reactively decorate episodes for dynamic DOM changes
       DOMObserver.observe(() => applyAll());
 
-      // Robust handling for tabs opened/restored before script update
-      const currentPath = location.pathname;
-      let type = null;
-      if (Utils.isEpisodePathname(currentPath)) {
-        type = "episode";
-      } else if (Utils.isMoviePathname(currentPath)) {
-        type = "movie";
-      }
+      const currentPathInfo = PathAnalyzer.analyze(location.pathname);
 
-      if (type && Store.getStatus(type, currentPath) !== "seen") {
-        await handleToggle(type, currentPath, Store.getStatus(type, currentPath));
+      if (
+        currentPathInfo.isValid &&
+        (currentPathInfo.type === PathAnalyzer.EntityType.EPISODE ||
+          currentPathInfo.type === PathAnalyzer.EntityType.MOVIE) &&
+        Store.getStatus(currentPathInfo.type, currentPathInfo.id) !== "seen"
+      ) {
+        await handleToggle(
+          currentPathInfo.type,
+          currentPathInfo.id,
+          Store.getStatus(currentPathInfo.type, currentPathInfo.id),
+        );
       }
-    };
-
-    // Handle dynamic language changes
-    Settings.onLangChange = (newLang) => {
-      I18n.init(newLang);
-      applyAll(); // Force re-render of all UI texts
-      // If you need to refresh the Settings menu, call Settings.render() or equivalent
     };
 
     return { init };
