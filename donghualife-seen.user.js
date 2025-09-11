@@ -1626,7 +1626,7 @@
       }
     };
 
-    return { decorateItem, updateItemUI };
+    return { decorateItem, updateItemUI, computeId };
   })();
 
   /**
@@ -2141,126 +2141,61 @@
       );
     };
 
+    // Handles state changes from the Store and updates the UI accordingly.
     const handleStateChange = (change) => {
-      switch (change.type) {
-        case "INIT": {
+      if (change.type === "INIT") {
+        document.documentElement.classList.toggle(
+          Constants.ROOT_HL_CLASS,
+          Store.isRowHighlightOn(),
+        );
+        return;
+      }
+      if (change.type === "PREFS_CHANGE") {
+        const { oldPrefs, newPrefs } = change.payload;
+        const highlightChanged = oldPrefs.rowHighlight !== newPrefs.rowHighlight;
+        const langChanged = oldPrefs.userLang !== newPrefs.userLang;
+        if (highlightChanged) {
           document.documentElement.classList.toggle(
             Constants.ROOT_HL_CLASS,
             Store.isRowHighlightOn(),
           );
-          break;
         }
+        if (langChanged) {
+          UIManager.showToast(I18n.t("toastLangChanged"));
+          setTimeout(() => location.reload(), 1500);
+        }
+        return;
+      }
 
-        case "PREFS_CHANGE": {
-          const { oldPrefs, newPrefs } = change.payload;
-          const highlightChanged = oldPrefs.rowHighlight !== newPrefs.rowHighlight;
-          const langChanged = oldPrefs.userLang !== newPrefs.userLang;
+      // Map entity → lowercase type
+      const TYPE_MAP = { SERIES: "series", SEASON: "season", EPISODE: "episode", MOVIE: "movie" };
+      const match = /^([A-Z]+)_(CHANGE|REMOVE|CLEAR)$/.exec(change.type);
+      if (!match) {
+        return;
+      }
+      const [, entity, action] = match;
+      const type = TYPE_MAP[entity];
+      if (!type) {
+        return;
+      }
 
-          if (highlightChanged) {
-            document.documentElement.classList.toggle(
-              Constants.ROOT_HL_CLASS,
-              Store.isRowHighlightOn(),
-            );
+      if (action === "CLEAR") {
+        // Recalculate and refresh ALL decorated items of that type
+        const selector = `[${Constants.ITEM_DECORATED_ATTR}="${type}"]`;
+        for (const item of Utils.$$(selector)) {
+          const preferKind =
+            type === "series" || type === "season" ? item.getAttribute(Constants.KIND_ATTR) : null;
+          const id = ContentDecorator.computeId(item, Constants.LINK_SELECTOR, preferKind);
+          if (id) {
+            ContentDecorator.updateItemUI(id, { type });
           }
-
-          if (langChanged) {
-            UIManager.showToast(I18n.t("toastLangChanged"));
-            setTimeout(() => location.reload(), 1500);
-          }
-          break;
         }
+        return;
+      }
 
-        // Series
-        case "SERIES_CHANGE": {
-          ContentDecorator.updateItemUI(change.payload.id, {
-            type: "series",
-          });
-          break;
-        }
-
-        case "SERIES_REMOVE": {
-          ContentDecorator.updateItemUI(change.payload.id, {
-            type: "series",
-          });
-          break;
-        }
-
-        case "SERIES_CLEAR": {
-          Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="series"]`).forEach((item) => {
-            const id = ContentDecorator.computeId(item, Constants.LINK_SELECTOR, "series");
-            ContentDecorator.updateItemUI(id, { type: "series" });
-          });
-          break;
-        }
-
-        // Seasons
-        case "SEASON_CHANGE": {
-          ContentDecorator.updateItemUI(change.payload.id, {
-            type: "season",
-          });
-          break;
-        }
-
-        case "SEASON_REMOVE": {
-          ContentDecorator.updateItemUI(change.payload.id, {
-            type: "season",
-          });
-          break;
-        }
-
-        case "SEASON_CLEAR": {
-          Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="season"]`).forEach((item) => {
-            const id = ContentDecorator.computeId(item, Constants.LINK_SELECTOR, "season");
-            ContentDecorator.updateItemUI(id, { type: "season" });
-          });
-          break;
-        }
-
-        // Episodes
-        case "EPISODE_CHANGE": {
-          ContentDecorator.updateItemUI(change.payload.id, {
-            type: "episode",
-          });
-          break;
-        }
-
-        case "EPISODE_REMOVE": {
-          ContentDecorator.updateItemUI(change.payload.id, {
-            type: "episode",
-          });
-          break;
-        }
-
-        case "EPISODE_CLEAR": {
-          Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="episode"]`).forEach((item) => {
-            const id = ContentDecorator.computeId(item, Constants.LINK_SELECTOR, "episode");
-            ContentDecorator.updateItemUI(id, { type: "episode" });
-          });
-          break;
-        }
-
-        // Movies
-        case "MOVIE_CHANGE": {
-          ContentDecorator.updateItemUI(change.payload.id, {
-            type: "movie",
-          });
-          break;
-        }
-
-        case "MOVIE_REMOVE": {
-          ContentDecorator.updateItemUI(change.payload.id, {
-            type: "movie",
-          });
-          break;
-        }
-
-        case "MOVIE_CLEAR": {
-          Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="movie"]`).forEach((item) => {
-            const id = ContentDecorator.computeId(item, Constants.LINK_SELECTOR, "movie");
-            ContentDecorator.updateItemUI(id, { type: "movie" });
-          });
-          break;
-        }
+      // CHANGE / REMOVE: refresh the specific item
+      if (change.payload?.id) {
+        ContentDecorator.updateItemUI(change.payload.id, { type });
       }
     };
 
