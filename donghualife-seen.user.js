@@ -300,13 +300,13 @@
         return input.pathname;
       }
 
-      // HTMLAnchorElement - Check for href property instead of instanceof
-      if (input.tagName === "A" && input.href) {
+      // HTMLAnchorElement
+      if (input instanceof HTMLAnchorElement && input.href) {
         return new URL(input.href, window.location.origin).pathname;
       }
 
       // HTMLElement with href property
-      if (input.nodeType === 1 && input.href) {
+      if (input?.nodeType === 1 && typeof input.href === "string") {
         return new URL(input.href, window.location.origin).pathname;
       }
 
@@ -1214,6 +1214,19 @@
       prefs: new Map(),
     };
 
+    // Operation queue to serialize operations per entity ID
+    const opQueue = new Map();
+    function enqueueById(id, op) {
+      const prev = opQueue.get(id) || Promise.resolve();
+      const next = prev.then(op, op).finally(() => {
+        if (opQueue.get(id) === next) {
+          opQueue.delete(id);
+        }
+      });
+      opQueue.set(id, next);
+      return next;
+    }
+
     // Map entity types to their respective stores
     async function load() {
       for (const store of Object.values(TYPE_TO_STORE)) {
@@ -1230,6 +1243,9 @@
       } else {
         caches.prefs.set("userPreferences", {});
       }
+
+      // Notify that everything is ready
+      notify && notify({ type: "INIT" });
     }
 
     // Universal: sets (or overwrites) the state of an entity
@@ -1368,12 +1384,22 @@
 
     // Set user preferences
     async function setPrefs(newPrefs) {
-      const mergedPrefs = { ...getPrefs(), ...newPrefs };
+      const oldPrefs = getPrefs();
+      const mergedPrefs = { ...oldPrefs, ...newPrefs };
       caches.prefs.set("userPreferences", mergedPrefs);
-      await DatabaseManager.set(DB_STORE_PREFS, "userPreferences", mergedPrefs).catch(
-        console.error,
+
+      return Utils.withErrorHandling(
+        async () => {
+          await DatabaseManager.set(DB_STORE_PREFS, "userPreferences", mergedPrefs);
+          notify &&
+            notify({
+              type: "PREFS_CHANGE",
+              payload: { oldPrefs, newPrefs: mergedPrefs },
+            });
+          return mergedPrefs;
+        },
+        { errorMessageKey: "toastErrorSaving", logContext: "Error saving user preferences" },
       );
-      return mergedPrefs;
     }
 
     // Row Highlight
@@ -1421,7 +1447,7 @@
      * @param {string} id - The unique identifier of the item.
      * @param {boolean} seen - Whether the item is marked as seen.
      */
-    function receiveSync(id, seen) {
+    async function receiveSync(id, seen) {
       if (!id) {
         return;
       }
@@ -1440,11 +1466,9 @@
         return;
       }
 
-      if (seen) {
-        setState(pathInfo.type, id, "seen");
-      } else {
-        remove(pathInfo.type, id);
-      }
+      await enqueueById(id, () =>
+        seen ? setState(pathInfo.type, id, "seen") : remove(pathInfo.type, id),
+      );
     }
 
     // Expose API
@@ -2115,20 +2139,23 @@
     const setupSyncChannel = () => {
       if ("BroadcastChannel" in window) {
         syncChannel = new BroadcastChannel(Constants.SYNC_CHANNEL_NAME);
-        syncChannel.onmessage = (event) => {
-          const { id, seen } = event.data;
-          Store.receiveSync(id, seen);
+        syncChannel.onmessage = async (event) => {
+          const { id, seen } = event.data || {};
+          await Utils.withErrorHandling(() => Store.receiveSync(id, seen), {
+            logContext: "BroadcastChannel receiveSync",
+          });
         };
       } else {
         // Fallback to localStorage events
-        window.addEventListener("storage", (event) => {
+        window.addEventListener("storage", async (event) => {
           if (event.key === Constants.SYNC_CHANNEL_NAME && event.newValue) {
-            try {
-              const data = JSON.parse(event.newValue);
-              Store.receiveSync(data.id, data.seen);
-            } catch (e) {
-              console.error("Error parsing sync data from localStorage", e);
-            }
+            await Utils.withErrorHandling(
+              async () => {
+                const data = JSON.parse(event.newValue);
+                await Store.receiveSync(data.id, data.seen);
+              },
+              { logContext: "LocalStorage sync event" },
+            );
           }
         });
       }
