@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DonghuaLife – Mark Watched Episodes (✅)
 // @namespace    us_dhl_seen
-// @version      3.1.0
+// @version      3.2.0
 // @description  Adds a button to mark watched episodes, syncs status across tabs, and provides data management tools.
 // @author       Aesthermortis
 // @match        *://*.donghualife.com/*
@@ -652,11 +652,43 @@
       return slug.replace(/[-_]+/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
     }
 
+    /**
+     * Format series name from ID or path
+     * @param {string} idOrPath
+     * @returns {string|null}
+     */
+    function formatSeriesName(idOrPath) {
+      const info = analyze(idOrPath);
+      if (!info.isValid || info.type !== EntityType.SERIES) {
+        return null;
+      }
+      return info.seriesSlug ? slugToTitle(info.seriesSlug) : null;
+    }
+
+    /**
+     * Format season name from ID or path
+     * @param {string} idOrPath
+     * @returns {string|null}
+     */
+    function formatSeasonName(idOrPath) {
+      const info = analyze(idOrPath);
+      if (!info.isValid || info.type !== EntityType.SEASON) {
+        return null;
+      }
+      const series = info.seriesSlug ? slugToTitle(info.seriesSlug) : null;
+      if (series && Number.isInteger(info.seasonNumber)) {
+        return `${series} - ${info.seasonNumber}`;
+      }
+      return series;
+    }
+
     // Public API
     return {
       // Main functions
       analyze,
       analyzeBatch,
+      formatSeriesName,
+      formatSeasonName,
 
       // Helper functions
       getParent,
@@ -1223,6 +1255,20 @@
             obj.series_id = pathInfo.hierarchy.seriesId;
           }
         }
+
+        // Lazy migration: if name is missing, fill from PathAnalyzer
+        if (entityType === "series" && !obj.name) {
+          const name = PathAnalyzer.formatSeriesName(id);
+          if (name) {
+            obj.name = name;
+          }
+        }
+        if (entityType === "season" && !obj.name) {
+          const name = PathAnalyzer.formatSeasonName(id);
+          if (name) {
+            obj.name = name;
+          }
+        }
       }
 
       // Allow manual override of any fields
@@ -1773,12 +1819,7 @@
     };
 
     const changeLanguage = async (lang) => {
-      const currentPrefs = Store.getPrefs();
-      await Store.setPrefs({ ...currentPrefs, userLang: lang });
-
-      // Notify the change so the page reloads
-      UIManager.showToast(I18n.t("toastLangChanged"));
-      setTimeout(() => location.reload(), 1500);
+      await Store.setPrefs({ ...Store.getPrefs(), userLang: lang });
     };
 
     const openMenu = () => {
@@ -1935,26 +1976,23 @@
 
       const { seasonId, seriesId } = pathInfo.hierarchy;
 
+      // Propagate to Season
       if (seasonId && Store.getStatus("season", seasonId) !== STATE_WATCHING) {
         const extraFields = {};
         if (seriesId) {
           extraFields.series_id = seriesId;
         }
+        const seasonName = PathAnalyzer.formatSeasonName(seasonId) || "Unknown Season";
+        extraFields.name = seasonName;
 
         await Store.setState("season", seasonId, STATE_WATCHING, extraFields);
-
-        // For the name, search in the DOM
-        const seasonLink = document.querySelector(`a[href="${seasonId}"]`);
-        const seasonName = seasonLink?.textContent?.trim() || "Unknown Season";
         UIManager.showToast(I18n.t("toastAutoTrackSeason", { seasonName }));
       }
 
+      // Propagate to Series
       if (seriesId && Store.getStatus("series", seriesId) !== STATE_WATCHING) {
         const extraFields = {};
-
-        // For the name, search in the DOM
-        const seriesLink = document.querySelector(`a[href="${seriesId}"]`);
-        const seriesName = seriesLink?.textContent?.trim() || "Unknown Series";
+        const seriesName = PathAnalyzer.formatSeriesName(seriesId) || "Unknown Series";
         extraFields.name = seriesName;
 
         await Store.setState("series", seriesId, STATE_WATCHING, extraFields);
@@ -1970,7 +2008,9 @@
       if (type === "episode") {
         const newSeen = currentStatus !== "seen";
         if (newSeen) {
+          // First, save the episode state.
           await Store.setState("episode", id, "seen");
+          // Then, propagate the 'watching' state up the hierarchy.
           await propagateWatchingState(id);
         } else {
           await Store.remove("episode", id);
@@ -1994,8 +2034,14 @@
       // Series/Seasons
       if (type === "series" || type === "season") {
         if (currentStatus === STATE_UNTRACKED) {
+          const extraFields = {};
+          if (type === "series") {
+            extraFields.name = PathAnalyzer.formatSeriesName(id) || "Unknown Series";
+          } else {
+            extraFields.name = PathAnalyzer.formatSeasonName(id) || "Unknown Season";
+          }
           // UNTRACKED → WATCHING
-          await Store.setState(type, id, STATE_WATCHING);
+          await Store.setState(type, id, STATE_WATCHING, extraFields);
           // No propagation needed
         } else if (currentStatus === STATE_WATCHING) {
           // WATCHING → COMPLETED (and propagate)
@@ -2097,6 +2143,14 @@
             return;
           }
 
+          // Solo interceptar click izquierdo “normal” (sin Ctrl/Cmd/Shift/Alt)
+          const isPlainLeftClick =
+            event.button === 0 &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            !event.altKey;
+
           const pathInfo = PathAnalyzer.analyze(link.href);
 
           if (!pathInfo.isValid) {
@@ -2117,6 +2171,9 @@
           }
 
           // Mark as seen and propagate
+          if (isPlainLeftClick) {
+            event.preventDefault();
+          }
           await handleToggle(
             pathInfo.type,
             pathInfo.id,
@@ -2135,6 +2192,10 @@
             );
             // Remove immediately: ensures event only notifies, doesn't persist data
             localStorage.removeItem(Constants.SYNC_CHANNEL_NAME);
+          }
+
+          if (isPlainLeftClick) {
+            window.location.assign(link.href);
           }
         },
         { capture: true, passive: false },
