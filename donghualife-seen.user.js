@@ -2353,7 +2353,4 @@
   } else {
     AppController.init();
   }
-
-  // Expose Utils to the global scope
-  window.Utils = Utils;
 })();
