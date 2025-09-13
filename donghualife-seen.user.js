@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         DonghuaLife – Mark Watched Episodes (✅)
-// @namespace    us_dhl_seen
+// @namespace    com.aesthermortis.donghualife-seen
 // @version      3.2.0
 // @description  Adds a button to mark watched episodes, syncs status across tabs, and provides data management tools.
 // @author       Aesthermortis
@@ -842,6 +842,55 @@
     },
 
     /**
+     * Throttle: limits how often `fn` can run within `interval` ms.
+     * Supports leading/trailing calls for smoother UX on bursts.
+     */
+    throttle: (fn, interval, { leading = true, trailing = true } = {}) => {
+      let lastTime = 0;
+      let timeoutId = null;
+      let lastArgs = null;
+
+      const invoke = (ctx, args) => {
+        lastTime = Date.now();
+        timeoutId = null;
+        fn.apply(ctx, args);
+      };
+
+      return function throttled(...args) {
+        const now = Date.now();
+        if (!lastTime && !leading) {
+          lastTime = now;
+        }
+        const remaining = interval - (now - lastTime);
+        lastArgs = args;
+
+        if (remaining <= 0 || remaining > interval) {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          invoke(this, lastArgs);
+        } else if (trailing && !timeoutId) {
+          timeoutId = setTimeout(() => invoke(this, lastArgs), remaining);
+        }
+      };
+    },
+
+    /**
+     * Combines a fast leading throttle with a trailing debounce.
+     * - Throttle gives quick but bounded reactions during bursts.
+     * - Debounce ensures one final "settled" pass after the burst.
+     */
+    makeRateLimited: (fn, { throttleMs = 120, debounceMs = 180 } = {}) => {
+      const throttled = Utils.throttle(fn, throttleMs, { leading: true, trailing: true });
+      const debounced = Utils.debounce(fn, debounceMs);
+      return (...args) => {
+        throttled(...args); // quick, bounded responses during storms
+        debounced(...args); // final sweep once changes settle
+      };
+    },
+
+    /**
      * Centralized async error handling (store, db, etc).
      * @param {Function} task - async function performing the operation
      * @param {Object} options - { errorMessageKey, logContext }
@@ -1436,7 +1485,7 @@
         try {
           fn(change);
         } catch (e) {
-          console.error(e);
+          console.error("A subscriber failed to process a change:", e);
         }
       }
     }
@@ -1705,19 +1754,39 @@
    */
   const DOMObserver = (() => {
     let observer = null;
+
+    const hasRelevantChange = (m) => {
+      return (
+        (m.addedNodes && m.addedNodes.length > 0) ||
+        (m.removedNodes && m.removedNodes.length > 0) ||
+        m.type === "attributes"
+      );
+    };
+
     const observe = (callback) => {
       if (observer) {
         observer.disconnect();
       }
-      const debouncedCallback = Utils.debounce(callback, 150);
+
+      const rateLimited = Utils.makeRateLimited(callback, {
+        throttleMs: 120, // responde pronto pero con tope
+        debounceMs: 180, // última pasada cuando se calma
+      });
+
       observer = new MutationObserver((mutationsList) => {
-        const hasAddedNodes = mutationsList.some((m) => m.addedNodes.length > 0);
-        if (hasAddedNodes) {
-          debouncedCallback();
+        if (mutationsList.some(hasRelevantChange)) {
+          rateLimited();
         }
       });
-      observer.observe(document.body, { childList: true, subtree: true });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true, // opcional pero recomendable
+        attributeFilter: undefined, // o pon una lista si sabes qué atributos te interesan
+      });
     };
+
     return { observe };
   })();
 
