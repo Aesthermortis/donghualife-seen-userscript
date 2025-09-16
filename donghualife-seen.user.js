@@ -1683,6 +1683,13 @@
       if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === type) {
         return;
       }
+
+      const ancestorWithSameType = item.closest(
+        `[${Constants.ITEM_DECORATED_ATTR}="${type}"]`,
+      );
+      if (ancestorWithSameType && ancestorWithSameType !== item) {
+        return;
+      }
       // Store kind if relevant
       if ((type === "series" || type === "season") && preferKind) {
         item.setAttribute(Constants.KIND_ATTR, preferKind);
