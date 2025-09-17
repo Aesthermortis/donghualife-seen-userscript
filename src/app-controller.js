@@ -22,8 +22,14 @@ const AppController = (() => {
    * Airbnb JS Style Guide compliant.
    */
   const applyAll = (root = document) => {
+    const rootIsElement = root instanceof Element;
+    const gather = (selector) => [
+      ...(rootIsElement && root.matches(selector) ? [root] : []),
+      ...Utils.$$(selector, root),
+    ];
+
     // Decorate episode items (table rows and cards)
-    for (const item of Utils.$$(Constants.EPISODE_ITEM_SELECTOR, root)) {
+    for (const item of gather(Constants.EPISODE_ITEM_SELECTOR)) {
       if (item.tagName === "TR" && item.closest("thead")) {
         continue;
       }
@@ -38,7 +44,7 @@ const AppController = (() => {
     }
 
     // Decorate series items (headers and cards)
-    for (const item of Utils.$$(Constants.SERIES_ITEM_SELECTOR, root)) {
+    for (const item of gather(Constants.SERIES_ITEM_SELECTOR)) {
       if (!Utils.$("a[href^='/series/']", item)) {
         continue;
       }
@@ -55,7 +61,7 @@ const AppController = (() => {
     }
 
     // Decorate season items (cards/lists)
-    for (const item of Utils.$$(Constants.SEASON_ITEM_SELECTOR, root)) {
+    for (const item of gather(Constants.SEASON_ITEM_SELECTOR)) {
       if (!Utils.$("a[href^='/season/']", item)) {
         continue;
       }
@@ -75,7 +81,7 @@ const AppController = (() => {
     }
 
     // Decorate movie items (cards)
-    for (const item of Utils.$$(Constants.MOVIE_ITEM_SELECTOR, root)) {
+    for (const item of gather(Constants.MOVIE_ITEM_SELECTOR)) {
       ContentDecorator.decorateItem(item, {
         type: "movie",
         selector: Constants.LINK_SELECTOR,
@@ -425,7 +431,24 @@ const AppController = (() => {
     applyAll();
 
     // Reactively decorate episodes for dynamic DOM changes
-    DOMObserver.observe(() => applyAll());
+    DOMObserver.observe((nodes = []) => {
+      if (!Array.isArray(nodes) || nodes.length === 0) {
+        applyAll();
+        return;
+      }
+
+      const seen = new Set();
+      for (const node of nodes) {
+        if (!(node instanceof Element)) {
+          continue;
+        }
+        if (seen.has(node)) {
+          continue;
+        }
+        seen.add(node);
+        applyAll(node);
+      }
+    });
 
     const currentPathInfo = PathAnalyzer.analyze(location.pathname);
 

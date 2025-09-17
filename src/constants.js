@@ -35,6 +35,8 @@ export const Constants = {
   ITEM_DECORATED_ATTR: "data-us-dhl-decorated-type",
   ITEM_STATE_ATTR: "data-us-dhl-state",
   TABLE_MARK_ATTR: "data-us-dhl-ctrlcol",
+  OBSERVER_PENDING_ATTR: "data-us-dhl-observer-pending",
+  OWNED_ATTR: "data-us-dhl-owned",
   BTN_CLASS: "us-dhl-seen-btn",
   BTN_TYPE_ATTR: "data-us-dhl-btn-type",
   CARD_BTN_CLASS: "us-dhl-card-btn",

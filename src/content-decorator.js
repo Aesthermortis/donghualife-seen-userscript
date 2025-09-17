@@ -86,6 +86,7 @@ const ContentDecorator = (() => {
       ? `${Constants.BTN_CLASS} ${Constants.CARD_BTN_CLASS}`
       : Constants.BTN_CLASS;
     b.setAttribute(Constants.BTN_TYPE_ATTR, type);
+    b.setAttribute(Constants.OWNED_ATTR, "1");
     updateButtonState(b, type, status);
     return b;
   };
@@ -101,6 +102,7 @@ const ContentDecorator = (() => {
     if (headerRow) {
       const th = document.createElement("th");
       th.className = Constants.CTRL_CELL_CLASS;
+      th.setAttribute(Constants.OWNED_ATTR, "1");
       headerRow.appendChild(th);
     }
     table.setAttribute(Constants.TABLE_MARK_ATTR, "1");
@@ -112,6 +114,7 @@ const ContentDecorator = (() => {
   const getButtonContainerForRow = (row) => {
     const c = document.createElement("td");
     c.className = Constants.CTRL_CELL_CLASS;
+    c.setAttribute(Constants.OWNED_ATTR, "1");
     row.appendChild(c);
     return c;
   };
