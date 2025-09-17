@@ -1,6 +1,6 @@
-import { CSS } from './constants.js';
-import Utils from './utils.js';
-import I18n from './i18n.js';
+import { CSS } from "./constants.js";
+import Utils from "./utils.js";
+import I18n from "./i18n.js";
 
 /**
  * @module UIManager
@@ -67,6 +67,45 @@ const UIManager = (() => {
         Utils.$(".secondary", overlay).addEventListener("click", () => close(null));
         overlay.addEventListener("click", () => close(null));
         Utils.$(".us-dhl-modal", overlay).addEventListener("click", (e) => e.stopPropagation());
+        input.focus();
+      }),
+    showFilePicker: ({
+      title,
+      text,
+      accept = ".json,application/json",
+      okLabel = I18n.t("accept"),
+      cancelLabel = I18n.t("cancel"),
+    }) =>
+      new Promise((resolve) => {
+        const modalHTML = `<div class="us-dhl-modal-header">${title}</div><div class="us-dhl-modal-body"><p>${text}</p><input type="file" class="us-dhl-file-input" accept="${accept}"></div><div class="us-dhl-modal-footer"><button class="us-dhl-modal-btn secondary">${cancelLabel}</button><button class="us-dhl-modal-btn primary" disabled>${okLabel}</button></div>`;
+        const overlay = createModal(modalHTML);
+        const modal = Utils.$(".us-dhl-modal", overlay);
+        const input = Utils.$(".us-dhl-file-input", overlay);
+        const primary = Utils.$(".primary", overlay);
+        const secondary = Utils.$(".secondary", overlay);
+        let selectedFile = null;
+
+        const close = (value) => {
+          overlay.remove();
+          resolve(value);
+        };
+
+        input.addEventListener("change", () => {
+          selectedFile = input.files && input.files[0] ? input.files[0] : null;
+          primary.disabled = !selectedFile;
+        });
+
+        primary.addEventListener("click", () => {
+          if (!selectedFile) {
+            input.click();
+            return;
+          }
+          close(selectedFile);
+        });
+
+        secondary.addEventListener("click", () => close(null));
+        overlay.addEventListener("click", () => close(null));
+        modal.addEventListener("click", (e) => e.stopPropagation());
         input.focus();
       }),
     showExport: ({ title, text, data }) => {

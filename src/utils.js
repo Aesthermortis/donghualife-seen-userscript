@@ -178,6 +178,26 @@ const Utils = {
     };
   },
 
+  /**
+   * Triggers a download for the provided text content.
+   * @param {string} filename
+   * @param {string} data
+   * @param {string} [mimeType]
+   */
+  downloadTextFile: (filename, data, mimeType = "application/json") => {
+    const blob = new Blob([data], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.style.display = "none";
+    (document.body || document.documentElement).appendChild(anchor);
+    anchor.click();
+    setTimeout(() => {
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    }, 0);
+  },
 };
 
 export default Utils;

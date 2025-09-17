@@ -1,55 +1,129 @@
-import Store from './store.js';
-import UIManager from './ui-manager.js';
-import I18n from './i18n.js';
-import Utils from './utils.js';
-import { Constants } from './constants.js';
+import Store from "./store.js";
+import UIManager from "./ui-manager.js";
+import I18n from "./i18n.js";
+import Utils from "./utils.js";
+import { Constants, STATE_WATCHING, STATE_COMPLETED } from "./constants.js";
 
 /**
  * @module Settings
  * @description Manages the settings menu and its actions (import, export, etc.).
  */
 const Settings = (() => {
+  const SUPPORTED_TYPES = ["episode", "movie", "series", "season"];
+  const ALLOWED_STATES = {
+    episode: new Set(["seen"]),
+    movie: new Set(["seen"]),
+    series: new Set([STATE_WATCHING, STATE_COMPLETED]),
+    season: new Set([STATE_WATCHING, STATE_COMPLETED]),
+  };
+
+  const parseBackupPayload = (rawText) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch (error) {
+      const err = new Error("Invalid JSON syntax.");
+      err.code = "INVALID_JSON";
+      err.cause = error;
+      throw err;
+    }
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      const err = new Error("Backup root must be an object.");
+      err.code = "INVALID_ROOT";
+      throw err;
+    }
+
+    const sanitized = {};
+    let total = 0;
+
+    for (const type of SUPPORTED_TYPES) {
+      const entries = parsed[type];
+      if (entries == null) {
+        continue;
+      }
+      if (!Array.isArray(entries)) {
+        const err = new Error(`Backup entry for "${type}" must be an array.`);
+        err.code = "INVALID_COLLECTION";
+        throw err;
+      }
+
+      const allowedStates = ALLOWED_STATES[type];
+      const cleaned = [];
+
+      entries.forEach((entry, index) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          const err = new Error(`Invalid record for "${type}" at index ${index}.`);
+          err.code = "INVALID_ENTRY";
+          throw err;
+        }
+
+        const { id, state } = entry;
+        if (typeof id !== "string" || !id.trim()) {
+          const err = new Error(`Invalid id for "${type}" at index ${index}.`);
+          err.code = "INVALID_ID";
+          throw err;
+        }
+
+        if (typeof state !== "string") {
+          const err = new Error(`Invalid state for "${type}" at index ${index}.`);
+          err.code = "INVALID_STATE";
+          throw err;
+        }
+
+        const normalizedState = state.trim();
+        if (!allowedStates.has(normalizedState)) {
+          const err = new Error(`Unsupported state "${state}" for "${type}" at index ${index}.`);
+          err.code = "INVALID_STATE";
+          throw err;
+        }
+
+        cleaned.push({ ...entry, id: id.trim(), state: normalizedState });
+      });
+
+      if (cleaned.length) {
+        sanitized[type] = cleaned;
+        total += cleaned.length;
+      }
+    }
+
+    if (total === 0) {
+      const err = new Error("No valid records found in backup.");
+      err.code = "NO_RECORDS";
+      throw err;
+    }
+
+    return { data: sanitized, total };
+  };
   const exportJSON = async () => {
     try {
       const exportObj = {};
-      for (const type of ["episode", "movie", "series", "season"]) {
-        // Change these types if you have more or fewer
-        exportObj[type] = await Store.getAll(type); // Should return an array of objects with id and state
+      for (const type of SUPPORTED_TYPES) {
+        exportObj[type] = await Store.getAll(type);
       }
-      UIManager.showExport({
-        title: I18n.t("exportTitle"),
-        text: I18n.t("exportText"),
-        data: JSON.stringify(exportObj, null, 2),
-      });
+      const jsonData = JSON.stringify(exportObj, null, 2);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = `donghualife-seen-backup-${timestamp}.json`;
+      Utils.downloadTextFile(filename, jsonData);
+      UIManager.showToast(I18n.t("toastExportSuccess"));
     } catch (error) {
       console.error("Failed to export data:", error);
       UIManager.showToast(I18n.t("toastErrorExporting"));
     }
   };
-
   const importJSON = async () => {
-    const txt = await UIManager.showPrompt({
+    const file = await UIManager.showFilePicker({
       title: I18n.t("importTitle"),
       text: I18n.t("importText"),
+      accept: ".json,application/json",
     });
-    if (!txt) {
+    if (!file) {
       return;
     }
 
     try {
-      const parsed = JSON.parse(txt);
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        throw new Error("Invalid JSON format.");
-      }
-      // Simple validation: expects an object by type, each an array of items {id, state}
-      const validTypes = ["episode", "movie", "series", "season"];
-      let total = 0;
-      for (const type of validTypes) {
-        if (!parsed[type]) {
-          continue;
-        }
-        total += parsed[type].length;
-      }
+      const fileContents = await file.text();
+      const { data, total } = parseBackupPayload(fileContents);
 
       const confirmed = await UIManager.showConfirm({
         title: I18n.t("confirmImportTitle"),
@@ -60,31 +134,33 @@ const Settings = (() => {
         return;
       }
 
-      const progress = UIManager.showProgress("Importing...");
-      // Clear all types first
-      for (const type of validTypes) {
+      const progress = UIManager.showProgress(I18n.t("importingProgress"));
+      for (const type of SUPPORTED_TYPES) {
         await Store.clear(type);
       }
+
       let importedCount = 0;
-      for (const type of validTypes) {
-        if (!parsed[type]) {
-          continue;
-        }
-        for (const entry of parsed[type]) {
+      for (const type of SUPPORTED_TYPES) {
+        const entries = data[type] || [];
+        for (const entry of entries) {
           await Store.setState(type, entry.id, entry.state);
           importedCount += 1;
           progress.update((importedCount / total) * 100);
         }
       }
+
       progress.close();
       UIManager.showToast(I18n.t("toastImportSuccess", { count: importedCount }));
       setTimeout(() => location.reload(), 1500);
     } catch (error) {
       console.error("Failed to import data:", error);
-      UIManager.showToast(I18n.t("toastErrorImporting"));
+      if (error?.code === "NO_RECORDS") {
+        UIManager.showToast(I18n.t("toastImportEmpty"));
+      } else {
+        UIManager.showToast(I18n.t("toastErrorImporting"));
+      }
     }
   };
-
   const resetAll = async () => {
     const confirmed = await UIManager.showConfirm({
       title: I18n.t("resetConfirmTitle"),
@@ -97,7 +173,7 @@ const Settings = (() => {
     }
 
     try {
-      for (const type of ["episode", "movie", "series", "season"]) {
+      for (const type of SUPPORTED_TYPES) {
         await Store.clear(type);
       }
       UIManager.showToast(I18n.t("toastDataReset"));
@@ -144,9 +220,7 @@ const Settings = (() => {
           const newHighlightState = !isHlOn;
           await Store.setPrefs({ ...currentPrefs, rowHighlight: newHighlightState });
           UIManager.showToast(
-            newHighlightState
-              ? I18n.t("toastHighlightEnabled")
-              : I18n.t("toastHighlightDisabled"),
+            newHighlightState ? I18n.t("toastHighlightEnabled") : I18n.t("toastHighlightDisabled"),
           );
         },
       },

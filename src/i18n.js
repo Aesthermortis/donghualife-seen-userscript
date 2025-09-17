@@ -1,4 +1,4 @@
-import { Constants } from './constants.js';
+import { Constants } from "./constants.js";
 
 /**
  * @module I18n
@@ -27,15 +27,15 @@ const I18n = (() => {
       enableHighlight: 'Enable "Seen" item highlight',
       disableHighlight: 'Disable "Seen" item highlight',
       resetDisplayPrefs: "Reset display preferences",
-      exportJson: "Export seen (JSON)",
-      importJson: "Import seen (JSON)",
+      exportJson: "Download seen data (.json)",
+      importJson: "Restore seen data from file",
       resetAllData: "Reset all seen data",
 
       // Toasts
       toastErrorLoading: "Error loading user data.",
       toastErrorSaving: "Error saving state.",
       toastErrorExporting: "Error exporting data.",
-      toastErrorImporting: "Error: Invalid JSON data provided.",
+      toastErrorImporting: "Error importing backup data.",
       toastErrorResetting: "Error resetting data.",
       toastErrorRemoving: "Error removing items.",
       toastErrorClearing: "Error clearing items.",
@@ -44,18 +44,20 @@ const I18n = (() => {
       toastPrefsReset: "Display preferences have been reset.",
       toastLangChanged: "Language changed. Reloading...",
       toastImportSuccess: "Successfully imported {count} records. Reloading...",
+      toastExportSuccess: "Backup download started.",
+      toastImportEmpty: "Backup file does not contain valid records.",
       toastDataReset: "Data reset. Reloading...",
       toastAutoTrackSeason: "Now tracking {seasonName}.",
       toastAutoTrackSeries: "Now tracking {seriesName}.",
 
       // Modals & Prompts
       exportTitle: "Export Backup",
-      exportText: "Copy this text to save a backup of your seen episodes.",
+      exportText: "A JSON backup file will be downloaded automatically.",
       importTitle: "Import Backup",
-      importText: "Paste the backup JSON you saved previously.",
+      importText: "Select the JSON backup file you saved previously.",
+      importingProgress: "Importing backup...",
       confirmImportTitle: "Confirm Import",
-      confirmImportText:
-        "Found {count} records. This will overwrite your current data. Continue?",
+      confirmImportText: "Found {count} records. This will overwrite your current data. Continue?",
       confirmImportOk: "Yes, import",
       resetConfirmTitle: "Confirm Reset",
       resetConfirmText:
@@ -90,15 +92,15 @@ const I18n = (() => {
       enableHighlight: 'Activar resaltado de "Visto"',
       disableHighlight: 'Desactivar resaltado de "Visto"',
       resetDisplayPrefs: "Restablecer preferencias de visualización",
-      exportJson: "Exportar vistos (JSON)",
-      importJson: "Importar vistos (JSON)",
+      exportJson: "Descargar vistos (JSON)",
+      importJson: "Restaurar vistos desde archivo",
       resetAllData: "Restablecer todos los datos",
 
       // Toasts
       toastErrorLoading: "Error al cargar los datos del usuario.",
       toastErrorSaving: "Error al guardar el estado.",
       toastErrorExporting: "Error al exportar los datos.",
-      toastErrorImporting: "Error: El formato JSON proporcionado no es válido.",
+      toastErrorImporting: "Error al importar la copia de seguridad.",
       toastErrorResetting: "Error al restablecer los datos.",
       toastErrorRemoving: "Error al eliminar los elementos.",
       toastErrorClearing: "Error al limpiar los elementos.",
@@ -107,15 +109,18 @@ const I18n = (() => {
       toastPrefsReset: "Las preferencias de visualización han sido restablecidas.",
       toastLangChanged: "Idioma cambiado. Recargando...",
       toastImportSuccess: "Se importaron {count} registros correctamente. Recargando...",
+      toastExportSuccess: "Descarga de copia de seguridad iniciada.",
+      toastImportEmpty: "El archivo de copia de seguridad no contiene registros validos.",
       toastDataReset: "Datos restablecidos. Recargando...",
       toastAutoTrackSeason: "Ahora siguiendo {seasonName}.",
       toastAutoTrackSeries: "Ahora siguiendo {seriesName}.",
 
       // Modals & Prompts
       exportTitle: "Copia de Seguridad",
-      exportText: "Copia este texto para guardar una copia de seguridad de tus episodios vistos.",
+      exportText: "Se descargara un archivo JSON con tu copia de seguridad.",
       importTitle: "Importar Copia de Seguridad",
-      importText: "Pega la copia de seguridad en formato JSON que guardaste.",
+      importText: "Selecciona el archivo JSON de respaldo que guardaste.",
+      importingProgress: "Importando copia de seguridad...",
       confirmImportTitle: "Confirmar Importación",
       confirmImportText:
         "Se encontraron {count} registros. Esto sobrescribirá tus datos actuales. ¿Continuar?",
