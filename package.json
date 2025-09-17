@@ -1,0 +1,12 @@
+{
+  "name": "donghualife-seen-userscript",
+  "version": "3.2.0",
+  "description": "UserScript to track watched episodes on donghualife.com",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c"
+  },
+  "devDependencies": {
+    "rollup": "^4.21.0"
+  }
+}
