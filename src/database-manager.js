@@ -1,4 +1,4 @@
-import { DB_NAME, DB_VERSION, STORE_LIST, DB_STORE_PREFS } from './constants.js';
+import { DB_NAME, DB_VERSION, STORE_LIST, DB_STORE_PREFS } from "./constants.js";
 
 /**
  * @module DatabaseManager

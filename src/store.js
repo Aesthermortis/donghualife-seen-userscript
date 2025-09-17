@@ -1,7 +1,7 @@
-import { TYPE_TO_STORE, DB_STORE_PREFS, STATE_UNTRACKED, Constants } from './constants.js';
-import DatabaseManager from './database-manager.js';
-import PathAnalyzer from './path-analyzer.js';
-import withErrorHandling from './error-handler.js';
+import { TYPE_TO_STORE, DB_STORE_PREFS, STATE_UNTRACKED, Constants } from "./constants.js";
+import DatabaseManager from "./database-manager.js";
+import PathAnalyzer from "./path-analyzer.js";
+import withErrorHandling from "./error-handler.js";
 
 /**
  * @module Store
@@ -298,5 +298,3 @@ const Store = (() => {
 })();
 
 export default Store;
-
-

@@ -1,8 +1,8 @@
-import { Constants, STATE_WATCHING, STATE_COMPLETED } from './constants.js';
-import PathAnalyzer from './path-analyzer.js';
-import Store from './store.js';
-import Utils from './utils.js';
-import I18n from './i18n.js';
+import { Constants, STATE_WATCHING, STATE_COMPLETED } from "./constants.js";
+import PathAnalyzer from "./path-analyzer.js";
+import Store from "./store.js";
+import Utils from "./utils.js";
+import I18n from "./i18n.js";
 
 /**
  * @module ContentDecorator

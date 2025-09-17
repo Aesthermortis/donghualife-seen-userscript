@@ -1,5 +1,5 @@
-import UIManager from './ui-manager.js';
-import I18n from './i18n.js';
+import UIManager from "./ui-manager.js";
+import I18n from "./i18n.js";
 
 /**
  * Provides centralized error handling for async operations.
@@ -17,4 +17,3 @@ const withErrorHandling = async (task, { errorMessageKey, logContext = "" } = {}
 };
 
 export default withErrorHandling;
-

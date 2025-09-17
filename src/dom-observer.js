@@ -1,5 +1,5 @@
-import { Constants } from './constants.js';
-import Utils from './utils.js';
+import { Constants } from "./constants.js";
+import Utils from "./utils.js";
 
 /**
  * @module DOMObserver
@@ -23,7 +23,7 @@ const DOMObserver = (() => {
 
   const isOwnedSubtree = (node) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      return node.textContent?.trim() === '';
+      return node.textContent?.trim() === "";
     }
     if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
       return Array.from(node.childNodes).every(isOwnedSubtree);
@@ -49,15 +49,15 @@ const DOMObserver = (() => {
     if (!attributeName || !isElement(target)) {
       return false;
     }
-    if (attributeName.startsWith('data-us-dhl-')) {
+    if (attributeName.startsWith("data-us-dhl-")) {
       return true;
     }
     if (isOwnedByScript(target)) {
       return true;
     }
     if (
-      attributeName === 'class' &&
-      Array.from(target.classList).some((cls) => cls.startsWith('us-dhl-'))
+      attributeName === "class" &&
+      Array.from(target.classList).some((cls) => cls.startsWith("us-dhl-"))
     ) {
       return true;
     }
@@ -83,7 +83,7 @@ const DOMObserver = (() => {
     if (element.hasAttribute(Constants.OBSERVER_PENDING_ATTR)) {
       return false;
     }
-    element.setAttribute(Constants.OBSERVER_PENDING_ATTR, '1');
+    element.setAttribute(Constants.OBSERVER_PENDING_ATTR, "1");
     pendingRefs.add(new WeakRef(element));
     return true;
   };
@@ -99,14 +99,14 @@ const DOMObserver = (() => {
   };
 
   const collectFromMutation = (mutation) => {
-    if (mutation.type === 'attributes') {
+    if (mutation.type === "attributes") {
       if (shouldIgnoreAttributeMutation(mutation)) {
         return false;
       }
       return markPending(mutation.target);
     }
 
-    if (mutation.type === 'childList') {
+    if (mutation.type === "childList") {
       if (isSelfInflictedChildList(mutation)) {
         return false;
       }

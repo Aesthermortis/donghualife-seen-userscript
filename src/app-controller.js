@@ -1,13 +1,13 @@
-import { Constants, STATE_UNTRACKED, STATE_WATCHING, STATE_COMPLETED } from './constants.js';
-import Utils from './utils.js';
-import I18n from './i18n.js';
-import UIManager from './ui-manager.js';
-import Store from './store.js';
-import Settings from './settings.js';
-import ContentDecorator from './content-decorator.js';
-import DOMObserver from './dom-observer.js';
-import PathAnalyzer from './path-analyzer.js';
-import withErrorHandling from './error-handler.js';
+import { Constants, STATE_UNTRACKED, STATE_WATCHING, STATE_COMPLETED } from "./constants.js";
+import Utils from "./utils.js";
+import I18n from "./i18n.js";
+import UIManager from "./ui-manager.js";
+import Store from "./store.js";
+import Settings from "./settings.js";
+import ContentDecorator from "./content-decorator.js";
+import DOMObserver from "./dom-observer.js";
+import PathAnalyzer from "./path-analyzer.js";
+import withErrorHandling from "./error-handler.js";
 
 /**
  * @module AppController
@@ -337,10 +337,7 @@ const AppController = (() => {
   // Handles state changes from the Store and updates the UI accordingly.
   const handleStateChange = (change) => {
     if (change.type === "INIT") {
-      document.documentElement.classList.toggle(
-        Constants.ROOT_HL_CLASS,
-        Store.isRowHighlightOn(),
-      );
+      document.documentElement.classList.toggle(Constants.ROOT_HL_CLASS, Store.isRowHighlightOn());
       return;
     }
     if (change.type === "PREFS_CHANGE") {
@@ -469,4 +466,3 @@ const AppController = (() => {
   return { init };
 })();
 export default AppController;
-
