@@ -3,9 +3,13 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - master # Trigger on pushes to the master branch
 
 jobs:
   build-and-release:
+    permissions:
+      contents: write # Required to create releases
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
