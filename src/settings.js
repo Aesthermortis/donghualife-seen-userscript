@@ -143,7 +143,8 @@ const Settings = (() => {
       for (const type of SUPPORTED_TYPES) {
         const entries = data[type] || [];
         for (const entry of entries) {
-          await Store.setState(type, entry.id, entry.state);
+          const { id, state, ...extras } = entry;
+          await Store.setState(type, id, state, extras);
           importedCount += 1;
           progress.update((importedCount / total) * 100);
         }
