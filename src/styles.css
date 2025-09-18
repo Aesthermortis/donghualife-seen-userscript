@@ -1,0 +1,291 @@
+/* Base Button Style */
+.us-dhl-seen-btn {
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0.32rem 0.65rem;
+  border: none;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f5f7fa;
+  transition: filter 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+
+.us-dhl-seen-btn:hover {
+  filter: brightness(1.2);
+}
+
+.us-dhl-seen-btn[aria-pressed="true"] {
+  background: rgba(4, 120, 87, 0.75);
+  color: #f0fff8;
+}
+
+.us-dhl-seen-btn[aria-pressed="true"]:hover {
+  filter: brightness(1.3);
+}
+
+.us-dhl-seen-btn:focus {
+  outline: 2px solid rgba(255, 255, 255, 0.35);
+  outline-offset: 2px;
+}
+
+.us-dhl-seen-btn[data-us-dhl-state="seen"] {
+  background: rgba(4, 120, 87, 0.75);
+  color: #f0fff8;
+}
+
+.us-dhl-seen-btn[data-us-dhl-state="watching"] {
+  background: rgba(59, 130, 246, 0.75);
+  color: #eff6ff;
+}
+
+.us-dhl-seen-btn[data-us-dhl-state="completed"] {
+  background: rgba(139, 92, 246, 0.75);
+  color: #f5f3ff;
+}
+
+/* Episode Card Button Specifics */
+.views-row .episode {
+  position: relative;
+}
+
+.us-dhl-card-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  background: rgba(20, 20, 22, 0.7);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+}
+
+.us-dhl-card-btn[aria-pressed="true"] {
+  background: rgba(4, 120, 87, 0.75);
+}
+
+.us-dhl-card-btn[data-us-dhl-state="seen"] {
+  background: rgba(4, 120, 87, 0.75);
+}
+
+.us-dhl-card-btn[data-us-dhl-state="watching"] {
+  background: rgba(59, 130, 246, 0.75);
+}
+
+.us-dhl-card-btn[data-us-dhl-state="completed"] {
+  background: rgba(139, 92, 246, 0.75);
+}
+
+/* Table Control Column */
+.us-dhl-ctrlcol {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Seen Item Highlight (when enabled) */
+.us-dhl-rowhl-on .us-dhl-item-seen {
+  background: rgba(4, 120, 87, 0.1);
+}
+
+.us-dhl-rowhl-on .us-dhl-item-seen:hover,
+.us-dhl-rowhl-on .us-dhl-item-seen:focus-within {
+  background: rgba(4, 120, 87, 0.18);
+}
+
+.us-dhl-rowhl-on .us-dhl-item-seen a {
+  opacity: 0.95;
+}
+
+.us-dhl-rowhl-on .us-dhl-item-seen .us-dhl-seen-btn[aria-pressed="true"] {
+  filter: none;
+}
+
+/* Motion Preferences */
+@media (prefers-reduced-motion: no-preference) {
+  .us-dhl-seen-btn,
+  .us-dhl-rowhl-on .us-dhl-item-seen,
+  .us-dhl-item-watching,
+  .us-dhl-item-completed {
+    transition: all 0.15s ease;
+  }
+}
+
+/* Floating Action Button (FAB) */
+.us-dhl-fab {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 9990;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: #059669;
+  color: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.us-dhl-fab:hover {
+  filter: brightness(1.1);
+  transform: scale(1.05);
+}
+
+.us-dhl-fab svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* --- Modern UI (Toasts & Modals) --- */
+.us-dhl-toast-container {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.us-dhl-toast {
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  color: #fff;
+  background: #333;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  animation: us-dhl-toast-in 0.3s ease;
+}
+
+@keyframes us-dhl-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+.us-dhl-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: us-dhl-fade-in 0.2s ease;
+}
+
+@keyframes us-dhl-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.us-dhl-modal {
+  background: #1e1e20;
+  border-radius: 0.75rem;
+  color: #f5f7fa;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+  animation: us-dhl-modal-in 0.2s ease-out;
+}
+
+@keyframes us-dhl-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+.us-dhl-modal-header {
+  padding: 1rem 1.5rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.us-dhl-modal-body {
+  padding: 1.5rem;
+}
+
+.us-dhl-modal-body p {
+  margin: 0 0 1rem;
+  line-height: 1.5;
+}
+
+.us-dhl-modal-body textarea,
+.us-dhl-modal-body input {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #2a2a2e;
+  color: #f5f7fa;
+  font-family: inherit;
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.us-dhl-modal-body textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.us-dhl-modal-footer {
+  padding: 1rem 1.5rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  background: rgba(0, 0, 0, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom-left-radius: 0.75rem;
+  border-bottom-right-radius: 0.75rem;
+}
+
+.us-dhl-modal-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: filter 0.15s ease;
+}
+
+.us-dhl-modal-btn:hover {
+  filter: brightness(1.15);
+}
+
+.us-dhl-modal-btn.primary {
+  background: #059669;
+  color: #fff;
+}
+
+.us-dhl-modal-btn.secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f7fa;
+}
+
+.us-dhl-settings-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.us-dhl-settings-menu .us-dhl-modal-btn {
+  width: 100%;
+  text-align: center;
+  padding: 0.75rem 1rem;
+  justify-content: center;
+}
+
+.us-dhl-progress {
+  width: 100%;
+  margin-top: 8px;
+}
