@@ -218,7 +218,10 @@ const Settings = (() => {
         onClick: async () => {
           const currentPrefs = Store.getPrefs();
           const newHighlightState = !isHlOn;
-          await Store.setPrefs({ ...currentPrefs, rowHighlight: newHighlightState });
+          await Store.setPrefs({
+            ...currentPrefs,
+            rowHighlight: newHighlightState,
+          });
           UIManager.showToast(
             newHighlightState ? I18n.t("toastHighlightEnabled") : I18n.t("toastHighlightDisabled"),
           );

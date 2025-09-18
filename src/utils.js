@@ -170,7 +170,10 @@ const Utils = {
    * - Debounce ensures one final "settled" pass after the burst.
    */
   makeRateLimited: (fn, { throttleMs = 120, debounceMs = 180 } = {}) => {
-    const throttled = Utils.throttle(fn, throttleMs, { leading: true, trailing: true });
+    const throttled = Utils.throttle(fn, throttleMs, {
+      leading: true,
+      trailing: true,
+    });
     const debounced = Utils.debounce(fn, debounceMs);
     return (...args) => {
       throttled(...args); // quick, bounded responses during storms
