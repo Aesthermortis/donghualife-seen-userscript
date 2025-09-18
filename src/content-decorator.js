@@ -63,8 +63,9 @@ const ContentDecorator = (() => {
           textKey = "mark";
           titleKey = "btnTitleNotWatching";
       }
+      const isFollowed = status === STATE_COMPLETED || status === STATE_WATCHING;
       ariaLabelKey = "btnToggleWatching";
-      btn.setAttribute("aria-pressed", String(status === STATE_COMPLETED));
+      btn.setAttribute("aria-pressed", String(isFollowed));
     } else {
       console.error(`Unhandled type: ${type}`);
       return;
