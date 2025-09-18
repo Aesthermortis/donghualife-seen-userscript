@@ -152,6 +152,56 @@ const AppController = (() => {
   };
 
   /**
+   * Reverts the propagated "watching" state when the source episode is unmarked.
+   * Ensures that seasons/series remain tracked only if they still have activity.
+   * @param {string} episodeId - The episode's unique identifier.
+   * @returns {Promise<void>}
+   */
+  const revertWatchingState = async (episodeId) => {
+    const pathInfo = PathAnalyzer.analyze(episodeId);
+
+    if (!pathInfo.isValid || pathInfo.type !== PathAnalyzer.EntityType.EPISODE) {
+      return;
+    }
+
+    const { seasonId, seriesId } = pathInfo.hierarchy;
+
+    if (seasonId) {
+      const remainingSeasonEpisodes = Store.getEpisodesBySeasonAndState(seasonId, "seen");
+      if (
+        remainingSeasonEpisodes.length === 0 &&
+        Store.getStatus("season", seasonId) === STATE_WATCHING
+      ) {
+        await Store.remove("season", seasonId);
+      }
+    }
+
+    if (seriesId && Store.getStatus("series", seriesId) === STATE_WATCHING) {
+      const watchingSeasons = Store.getSeasonsBySeriesAndState(seriesId, STATE_WATCHING);
+      const completedSeasons = Store.getSeasonsBySeriesAndState(seriesId, STATE_COMPLETED);
+      const hasTrackedSeasons = watchingSeasons.length > 0 || completedSeasons.length > 0;
+
+      if (!hasTrackedSeasons) {
+        const hasRemainingEpisodes = Store.getByState("episode", "seen").some((episode) => {
+          if (episode.series_id) {
+            return episode.series_id === seriesId;
+          }
+          const episodeInfo = PathAnalyzer.analyze(episode.id);
+          return (
+            episodeInfo.isValid &&
+            episodeInfo.type === PathAnalyzer.EntityType.EPISODE &&
+            episodeInfo.hierarchy.seriesId === seriesId
+          );
+        });
+
+        if (!hasRemainingEpisodes) {
+          await Store.remove("series", seriesId);
+        }
+      }
+    }
+  };
+
+  /**
    * Handles item state changes and propagates them across hierarchy.
    */
   const handleToggle = async (type, id, currentStatus) => {
@@ -165,6 +215,7 @@ const AppController = (() => {
         await propagateWatchingState(id);
       } else {
         await Store.remove("episode", id);
+        await revertWatchingState(id);
       }
 
       ContentDecorator.updateItemUI(id, { type: "episode" });
