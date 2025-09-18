@@ -1,4 +1,4 @@
-import { CSS } from "./constants.js";
+import CSS from "./styles.css";
 import Utils from "./utils.js";
 import I18n from "./i18n.js";
 
