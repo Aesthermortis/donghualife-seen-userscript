@@ -117,7 +117,11 @@ const Store = (() => {
       async () => {
         await DatabaseManager.delete(store, id);
         caches[store].delete(id);
-        notify && notify({ type: entityType.toUpperCase() + "_REMOVE", payload: { id } });
+        notify &&
+          notify({
+            type: entityType.toUpperCase() + "_REMOVE",
+            payload: { id },
+          });
       },
       {
         errorMessageKey: "toastErrorRemoving",
@@ -201,7 +205,10 @@ const Store = (() => {
           });
         return mergedPrefs;
       },
-      { errorMessageKey: "toastErrorSaving", logContext: "Error saving user preferences" },
+      {
+        errorMessageKey: "toastErrorSaving",
+        logContext: "Error saving user preferences",
+      },
     );
   }
 
@@ -225,7 +232,10 @@ const Store = (() => {
         caches[store].clear();
         notify && notify({ type: entityType.toUpperCase() + "_CLEAR" });
       },
-      { errorMessageKey: "toastErrorClearing", logContext: `Error clearing store=${store}` },
+      {
+        errorMessageKey: "toastErrorClearing",
+        logContext: `Error clearing store=${store}`,
+      },
     );
   }
 

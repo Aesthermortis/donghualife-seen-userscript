@@ -151,10 +151,14 @@ const AppController = (() => {
       const pathInfo = PathAnalyzer.analyze(id);
       if (pathInfo.isValid) {
         if (pathInfo.hierarchy.seasonId) {
-          ContentDecorator.updateItemUI(pathInfo.hierarchy.seasonId, { type: "season" });
+          ContentDecorator.updateItemUI(pathInfo.hierarchy.seasonId, {
+            type: "season",
+          });
         }
         if (pathInfo.hierarchy.seriesId) {
-          ContentDecorator.updateItemUI(pathInfo.hierarchy.seriesId, { type: "series" });
+          ContentDecorator.updateItemUI(pathInfo.hierarchy.seriesId, {
+            type: "series",
+          });
         }
       }
       return;
@@ -358,7 +362,12 @@ const AppController = (() => {
     }
 
     // Map entity → lowercase type
-    const TYPE_MAP = { SERIES: "series", SEASON: "season", EPISODE: "episode", MOVIE: "movie" };
+    const TYPE_MAP = {
+      SERIES: "series",
+      SEASON: "season",
+      EPISODE: "episode",
+      MOVIE: "movie",
+    };
     const match = /^([A-Z]+)_(CHANGE|REMOVE|CLEAR)$/.exec(change.type);
     if (!match) {
       return;
