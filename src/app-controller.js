@@ -130,6 +130,28 @@ const AppController = (() => {
   };
 
   /**
+   * Synchronizes seen state across tabs using BroadcastChannel or localStorage fallback.
+   * Episodes and movies are the only entities that emit sync updates.
+   * @param {string} type
+   * @param {string} id
+   */
+  const emitSyncUpdate = (type, id) => {
+    if (!id || (type !== "episode" && type !== "movie")) {
+      return;
+    }
+
+    const seen = Store.getStatus(type, id) === "seen";
+
+    if (syncChannel) {
+      syncChannel.postMessage({ id, seen });
+      return;
+    }
+
+    localStorage.setItem(Constants.SYNC_CHANNEL_NAME, JSON.stringify({ id, seen }));
+    localStorage.removeItem(Constants.SYNC_CHANNEL_NAME);
+  };
+
+  /**
    * Handles item state changes and propagates them across hierarchy.
    */
   const handleToggle = async (type, id, currentStatus) => {
@@ -161,6 +183,7 @@ const AppController = (() => {
           });
         }
       }
+      emitSyncUpdate(type, id);
       return;
     }
 
@@ -241,6 +264,7 @@ const AppController = (() => {
         await Store.remove("movie", id);
       }
       ContentDecorator.updateItemUI(id, { type: "movie" });
+      emitSyncUpdate(type, id);
       return;
     }
   };
@@ -318,17 +342,7 @@ const AppController = (() => {
         );
 
         // Synchronize across tabs
-        if (syncChannel) {
-          syncChannel.postMessage({ id: pathInfo.id, seen: true });
-        } else {
-          // Fallback: Trigger cross-tab sync via localStorage event
-          localStorage.setItem(
-            Constants.SYNC_CHANNEL_NAME,
-            JSON.stringify({ id: pathInfo.id, seen: true }),
-          );
-          // Remove immediately: ensures event only notifies, doesn't persist data
-          localStorage.removeItem(Constants.SYNC_CHANNEL_NAME);
-        }
+        emitSyncUpdate(pathInfo.type, pathInfo.id);
 
         if (isPlainLeftClick) {
           window.location.assign(link.href);
