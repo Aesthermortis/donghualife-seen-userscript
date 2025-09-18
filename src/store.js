@@ -17,6 +17,60 @@ const Store = (() => {
     prefs: new Map(),
   };
 
+  const PREF_RULES = {
+    rowHighlight: (value) => (typeof value === "boolean" ? value : undefined),
+    userLang: (value) => {
+      if (typeof value !== "string") {
+        return undefined;
+      }
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    },
+  };
+
+  function isPlainObject(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  function sanitizePrefs(prefs, { warn = false } = {}) {
+    if (!isPlainObject(prefs)) {
+      if (warn && prefs !== undefined) {
+        console.warn("Store: preferences must be an object. Ignoring update.", prefs);
+      }
+      return {};
+    }
+
+    const sanitized = {};
+    for (const [key, value] of Object.entries(prefs)) {
+      const sanitize = PREF_RULES[key];
+      if (!sanitize) {
+        if (warn) {
+          console.warn(`Store: ignoring unknown preference "${key}".`);
+        }
+        continue;
+      }
+      const sanitizedValue = sanitize(value);
+      if (sanitizedValue === undefined) {
+        if (warn) {
+          console.warn(`Store: ignoring invalid value for preference "${key}".`, value);
+        }
+        continue;
+      }
+      sanitized[key] = sanitizedValue;
+    }
+    return sanitized;
+  }
+
+  function arePrefsEqual(a, b) {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const key of keys) {
+      if (!Object.is(a[key], b[key])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // Operation queue to serialize operations per entity ID
   const opQueue = new Map();
   function enqueueById(id, op) {
@@ -41,11 +95,8 @@ const Store = (() => {
     }
     // Load preferences
     const prefs = await DatabaseManager.get(DB_STORE_PREFS, "userPreferences");
-    if (prefs) {
-      caches.prefs.set("userPreferences", prefs);
-    } else {
-      caches.prefs.set("userPreferences", {});
-    }
+    const sanitizedPrefs = sanitizePrefs(prefs);
+    caches.prefs.set("userPreferences", sanitizedPrefs);
 
     // Notify that everything is ready
     notify && notify({ type: "INIT" });
@@ -186,13 +237,25 @@ const Store = (() => {
 
   // Get user preferences
   function getPrefs() {
-    return caches.prefs.get("userPreferences") || {};
+    const prefs = caches.prefs.get("userPreferences") || {};
+    return { ...prefs };
   }
 
   // Set user preferences
   async function setPrefs(newPrefs) {
-    const oldPrefs = getPrefs();
-    const mergedPrefs = { ...oldPrefs, ...newPrefs };
+    const sanitizedUpdate = sanitizePrefs(newPrefs, { warn: true });
+
+    const currentPrefs = caches.prefs.get("userPreferences");
+    const sanitizedCurrentPrefs = sanitizePrefs(currentPrefs);
+    caches.prefs.set("userPreferences", sanitizedCurrentPrefs);
+
+    const oldPrefs = { ...sanitizedCurrentPrefs };
+    const mergedPrefs = { ...sanitizedCurrentPrefs, ...sanitizedUpdate };
+
+    if (arePrefsEqual(mergedPrefs, sanitizedCurrentPrefs)) {
+      return oldPrefs;
+    }
+
     caches.prefs.set("userPreferences", mergedPrefs);
 
     return withErrorHandling(
