@@ -84,7 +84,7 @@ const PathAnalyzer = (() => {
         Object.assign(result, extractSeasonInfo(pathname, entityInfo.format));
         break;
       case EntityType.SERIES:
-        Object.assign(result, extractSeriesInfo(pathname, entityInfo.format));
+        Object.assign(result, extractSeriesInfo(pathname));
         break;
       case EntityType.MOVIE:
         Object.assign(result, extractMovieInfo(pathname, entityInfo.format));
@@ -230,7 +230,7 @@ const PathAnalyzer = (() => {
   /**
    * Extract series-specific information
    */
-  function extractSeriesInfo(pathname, format) {
+  function extractSeriesInfo(pathname) {
     const info = {
       seriesSlug: null,
     };
