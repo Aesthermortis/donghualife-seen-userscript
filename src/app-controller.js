@@ -90,6 +90,20 @@ const AppController = (() => {
     }
   };
 
+  const observerCallback = (nodes = []) => {
+    if (Array.isArray(nodes) && nodes.length > 0) {
+      const seen = new Set();
+      for (const node of nodes) {
+        if (node instanceof Element && !seen.has(node)) {
+          seen.add(node);
+          applyAll(node);
+        }
+      }
+    } else {
+      applyAll();
+    }
+  };
+
   /**
    * Propagates the "watching" state to season and series when an episode is marked as seen.
    * Isolated for clarity and testability.
@@ -463,6 +477,10 @@ const AppController = (() => {
     }
   };
 
+  const teardown = () => {
+    DOMObserver.disconnect();
+  };
+
   /**
    * App initialization: ensures robust state synchronization, localization,
    * and immediate UI feedback.
@@ -502,24 +520,7 @@ const AppController = (() => {
     applyAll();
 
     // Reactively decorate episodes for dynamic DOM changes
-    DOMObserver.observe((nodes = []) => {
-      if (!Array.isArray(nodes) || nodes.length === 0) {
-        applyAll();
-        return;
-      }
-
-      const seen = new Set();
-      for (const node of nodes) {
-        if (!(node instanceof Element)) {
-          continue;
-        }
-        if (seen.has(node)) {
-          continue;
-        }
-        seen.add(node);
-        applyAll(node);
-      }
-    });
+    DOMObserver.observe(observerCallback, { observeAttributes: false });
 
     const currentPathInfo = PathAnalyzer.analyze(location.pathname);
 
@@ -537,6 +538,15 @@ const AppController = (() => {
     }
   };
 
-  return { init };
+  window.addEventListener("pageshow", (e) => {
+    if (e.persisted) {
+      DOMObserver.observe(observerCallback, { observeAttributes: false });
+      applyAll();
+    }
+  });
+
+  window.addEventListener("pagehide", teardown);
+
+  return { init, teardown };
 })();
 export default AppController;
