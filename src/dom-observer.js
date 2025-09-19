@@ -9,6 +9,19 @@ const DOMObserver = (() => {
   let observer = null;
   const pendingRefs = new Set();
 
+  const clearPendingRefs = () => {
+    if (!pendingRefs.size) {
+      return;
+    }
+    for (const ref of pendingRefs) {
+      const node = ref.deref();
+      if (isElement(node)) {
+        node.removeAttribute(Constants.OBSERVER_PENDING_ATTR);
+      }
+    }
+    pendingRefs.clear();
+  };
+
   const isElement = (node) => node instanceof Element;
 
   const isOwnedByScript = (node) => {
@@ -144,11 +157,21 @@ const DOMObserver = (() => {
     }
   };
 
-  const observe = (callback) => {
-    if (observer) {
-      observer.disconnect();
+  const disconnect = () => {
+    if (!observer) {
+      clearPendingRefs();
+      return;
     }
-    pendingRefs.clear();
+    observer.takeRecords();
+    observer.disconnect();
+    observer = null;
+    clearPendingRefs();
+  };
+
+  const observe = (callback, options = {}) => {
+    const { observeAttributes = false, attributeFilter } = options;
+
+    disconnect();
 
     const rateLimited = Utils.makeRateLimited(() => flushPending(callback), {
       throttleMs: 120,
@@ -170,12 +193,12 @@ const DOMObserver = (() => {
     observer.observe(document.body, {
       childList: true,
       subtree: true,
-      attributes: true,
-      attributeOldValue: false,
+      attributes: Boolean(observeAttributes),
+      attributeFilter: attributeFilter || undefined,
     });
   };
 
-  return { observe };
+  return { observe, disconnect };
 })();
 
 export default DOMObserver;
