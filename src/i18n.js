@@ -49,6 +49,7 @@ const I18n = (() => {
       toastDataReset: "Data reset. Reloading...",
       toastAutoTrackSeason: "Now tracking {seasonName}.",
       toastAutoTrackSeries: "Now tracking {seriesName}.",
+      toastDbUpgradeReload: "Storage updated in another tab. Reloading...",
 
       // Modals & Prompts
       exportTitle: "Export Backup",
@@ -63,6 +64,10 @@ const I18n = (() => {
       resetConfirmText:
         "Are you sure you want to delete all seen episode data? This cannot be undone.",
       resetConfirmOk: "Yes, delete all",
+      dbBlockedTitle: "Finish update",
+      dbBlockedText:
+        "Close other DonguaLife tabs so the storage upgrade can complete, then reload this page.",
+      dbBlockedReload: "Reload now",
 
       // ARIA & Titles
       fabTitle: "Script Settings",
@@ -114,6 +119,7 @@ const I18n = (() => {
       toastDataReset: "Datos restablecidos. Recargando...",
       toastAutoTrackSeason: "Ahora siguiendo {seasonName}.",
       toastAutoTrackSeries: "Ahora siguiendo {seriesName}.",
+      toastDbUpgradeReload: "Almacenamiento actualizado. Recargando...",
 
       // Modals & Prompts
       exportTitle: "Copia de Seguridad",
@@ -129,6 +135,10 @@ const I18n = (() => {
       resetConfirmText:
         "Estás a punto de borrar todos los datos de episodios vistos. Esta acción no se puede deshacer.",
       resetConfirmOk: "Sí, borrar todo",
+      dbBlockedTitle: "Actualizacion pendiente",
+      dbBlockedText:
+        "Cierra las demas pestanas de DonguaLife para completar la actualizacion y luego recarga esta pagina.",
+      dbBlockedReload: "Recargar ahora",
 
       // ARIA & Titles
       fabTitle: "Configuración del Script",
