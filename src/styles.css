@@ -1,6 +1,7 @@
 /* Base Button Style */
 .us-dhl-seen-btn {
   cursor: pointer;
+  -webkit-user-select: none; /* Added for Safari support */
   user-select: none;
   font-size: 0.9rem;
   line-height: 1;
@@ -9,7 +10,9 @@
   border-radius: 0.75rem;
   background: rgba(255, 255, 255, 0.06);
   color: #f5f7fa;
-  transition: filter 0.15s ease, background 0.15s ease;
+  transition:
+    filter 0.15s ease,
+    background 0.15s ease;
   white-space: nowrap;
 }
 
@@ -58,6 +61,7 @@
   z-index: 10;
   background: rgba(20, 20, 22, 0.7);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  -webkit-backdrop-filter: blur(4px); /* Added for Safari support */
   backdrop-filter: blur(4px);
 }
 
@@ -108,7 +112,10 @@
   .us-dhl-rowhl-on .us-dhl-item-seen,
   .us-dhl-item-watching,
   .us-dhl-item-completed {
-    transition: all 0.15s ease;
+    transition:
+      background 0.15s ease,
+      filter 0.15s ease,
+      transform 0.15s ease;
   }
 }
 
@@ -129,7 +136,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.2s ease, filter 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    filter 0.2s ease;
 }
 
 .us-dhl-fab:hover {
@@ -174,6 +183,7 @@
   inset: 0;
   z-index: 9998;
   background: rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(4px); /* Added for Safari support */
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
