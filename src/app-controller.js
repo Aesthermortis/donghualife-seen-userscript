@@ -45,7 +45,7 @@ const AppController = (() => {
 
     // Decorate series items (headers and cards)
     for (const item of gather(Constants.SERIES_ITEM_SELECTOR)) {
-      if (!Utils.$("a[href^='/series/']", item)) {
+      if (!Utils.$(Constants.SERIES_LINK_SELECTOR, item)) {
         continue;
       }
       // Avoid double decoration
@@ -62,7 +62,7 @@ const AppController = (() => {
 
     // Decorate season items (cards/lists)
     for (const item of gather(Constants.SEASON_ITEM_SELECTOR)) {
-      if (!Utils.$("a[href^='/season/']", item)) {
+      if (!Utils.$(Constants.SEASON_LINK_SELECTOR, item)) {
         continue;
       }
       // Avoid double decoration
@@ -82,6 +82,9 @@ const AppController = (() => {
 
     // Decorate movie items (cards)
     for (const item of gather(Constants.MOVIE_ITEM_SELECTOR)) {
+      if (!Utils.$(Constants.MOVIE_LINK_SELECTOR, item)) {
+        continue;
+      }
       ContentDecorator.decorateItem(item, {
         type: "movie",
         selector: Constants.LINK_SELECTOR,

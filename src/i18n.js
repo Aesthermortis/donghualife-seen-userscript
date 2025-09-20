@@ -30,6 +30,11 @@ const I18n = (() => {
       exportJson: "Download seen data (.json)",
       importJson: "Restore seen data from file",
       resetAllData: "Reset all seen data",
+      bulkMarkVisibleEpisodesLabel: "Mark visible episodes as seen",
+      bulkUnmarkVisibleEpisodesLabel: "Clear seen state from visible episodes",
+      bulkMarkVisibleEpisodes: "Mark visible",
+      bulkUnmarkVisibleEpisodes: "Clear visible",
+      bulkActionsGroupLabel: "Episode bulk actions",
 
       // Toasts
       toastErrorLoading: "Error loading user data.",
@@ -50,6 +55,10 @@ const I18n = (() => {
       toastAutoTrackSeason: "Now tracking {seasonName}.",
       toastAutoTrackSeries: "Now tracking {seriesName}.",
       toastDbUpgradeReload: "Storage updated in another tab. Reloading...",
+      toastBulkMarkVisibleSuccess: "Marked {count} visible episodes as seen.",
+      toastBulkMarkVisibleNone: "No visible episodes to mark.",
+      toastBulkUnmarkVisibleSuccess: "Cleared seen state for {count} visible episodes.",
+      toastBulkUnmarkVisibleNone: "No visible episodes are marked as seen.",
 
       // Modals & Prompts
       exportTitle: "Export Backup",
@@ -100,6 +109,11 @@ const I18n = (() => {
       exportJson: "Descargar vistos (JSON)",
       importJson: "Restaurar vistos desde archivo",
       resetAllData: "Restablecer todos los datos",
+      bulkMarkVisibleEpisodesLabel: "Marcar episodios visibles como vistos",
+      bulkUnmarkVisibleEpisodesLabel: "Quitar visto a episodios visibles",
+      bulkMarkVisibleEpisodes: "Marcar visibles",
+      bulkUnmarkVisibleEpisodes: "Quitar visibles",
+      bulkActionsGroupLabel: "Acciones masivas de episodios",
 
       // Toasts
       toastErrorLoading: "Error al cargar los datos del usuario.",
@@ -120,6 +134,10 @@ const I18n = (() => {
       toastAutoTrackSeason: "Ahora siguiendo {seasonName}.",
       toastAutoTrackSeries: "Ahora siguiendo {seriesName}.",
       toastDbUpgradeReload: "Almacenamiento actualizado. Recargando...",
+      toastBulkMarkVisibleSuccess: "Se marcaron {count} episodios visibles como vistos.",
+      toastBulkMarkVisibleNone: "No hay episodios visibles para marcar.",
+      toastBulkUnmarkVisibleSuccess: "Se quitaron los vistos de {count} episodios visibles.",
+      toastBulkUnmarkVisibleNone: "No hay episodios visibles marcados como vistos.",
 
       // Modals & Prompts
       exportTitle: "Copia de Seguridad",

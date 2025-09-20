@@ -201,6 +201,33 @@ const Utils = {
       URL.revokeObjectURL(url);
     }, 0);
   },
+
+  /**
+   * Determines whether an element is visible to the user.
+   * Falls back to layout heuristics if checkVisibility is unavailable.
+   * @param {Element|null} element
+   * @returns {boolean}
+   */
+  isElementVisible: (element) => {
+    if (!element) {
+      return false;
+    }
+    if (typeof element.checkVisibility === "function") {
+      try {
+        return element.checkVisibility({
+          checkOpacity: true,
+          checkVisibilityCSS: true,
+        });
+      } catch (error) {
+        void error;
+      }
+    }
+    if (element.offsetParent !== null) {
+      return true;
+    }
+    const rects = element.getClientRects();
+    return rects.length > 0 && Array.from(rects).some((rect) => rect.width > 0 && rect.height > 0);
+  },
 };
 
 export default Utils;
