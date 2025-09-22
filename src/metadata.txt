@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DonghuaLife – Mark Watched Episodes (✅)
 // @namespace    com.aesthermortis.donghualife-seen
-// @version      __VERSION__
+// @version      3.4.0
 // @description  Adds a button to mark watched episodes, syncs status across tabs, and provides data management tools.
 // @author       Aesthermortis
 // @match        *://*.donghualife.com/*
