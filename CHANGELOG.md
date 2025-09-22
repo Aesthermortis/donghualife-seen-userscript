@@ -1,3 +1,9 @@
+## [3.4.1](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.4.0...v3.4.1) (2025-09-22)
+
+### Bug Fixes
+
+* **build:** inject semantic-release version into Rollup to prevent 1.0.0 fallback ([de06204](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/de06204d4152cc9945b7de4cc0418e5b40f77f21))
+
 ## [3.4.0](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.3.1...v3.4.0) (2025-09-22)
 
 ### Features
