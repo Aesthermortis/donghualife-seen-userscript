@@ -3,7 +3,7 @@
   cursor: pointer;
   -webkit-user-select: none; /* Added for Safari support */
   user-select: none;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   line-height: 1;
   padding: 0.32rem 0.65rem;
   border: none;
@@ -113,8 +113,8 @@
 
 .us-dhl-card-btn {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 5px;
+  right: 5px;
   z-index: 10;
   background: rgba(20, 20, 22, 0.7);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
