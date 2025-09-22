@@ -7,19 +7,21 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "node scripts/bump-userscript.js ${nextRelease.version} && npm run build"
+        "prepareCmd": "USERSCRIPT_VERSION=${nextRelease.version} npm run build && node -e \"const fs=require('fs');const v='${nextRelease.version}';const s=fs.readFileSync('dist/donghualife-seen.user.js','utf8');if(!/^\\/\\/\\s*@version\\s+${nextRelease.version}/m.test(s)){throw new Error('Version mismatch in dist: expected '+v);}\""
       }
     ],
     [
       "@semantic-release/github",
       {
-        "assets": [{ "path": "dist/privacy-guard.user.js", "label": "Privacy Guard userscript" }]
+        "assets": [
+          { "path": "dist/donghualife-seen.user.js", "label": "Dongualife Seen userscript" }
+        ]
       }
     ],
     [
       "@semantic-release/git",
       {
-        "assets": ["CHANGELOG.md", "src/metadata.txt"],
+        "assets": ["CHANGELOG.md"],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
     ]
