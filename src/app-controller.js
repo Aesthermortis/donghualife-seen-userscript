@@ -40,81 +40,186 @@ const AppController = (() => {
 
   let storeSubscribed = false;
 
+  const SELECTORS = {
+    episode: {
+      item: Constants.EPISODE_ITEM_SELECTOR,
+      link: Constants.EPISODE_LINK_SELECTOR,
+      preferKind: null,
+      validate: (el) => !(el.tagName === "TR" && el.closest("thead")),
+    },
+    series: {
+      item: Constants.SERIES_ITEM_SELECTOR,
+      link: Constants.SERIES_LINK_SELECTOR,
+      preferKind: "series",
+      validate: () => true,
+    },
+    season: {
+      item: Constants.SEASON_ITEM_SELECTOR,
+      link: Constants.SEASON_LINK_SELECTOR,
+      preferKind: "season",
+      validate: (el) => !el.closest("table, tr"),
+    },
+    movie: {
+      item: Constants.MOVIE_ITEM_SELECTOR,
+      link: Constants.MOVIE_LINK_SELECTOR,
+      preferKind: null,
+      validate: () => true,
+    },
+  };
+
+  const ALL_ITEMS_SELECTOR = Object.values(SELECTORS)
+    .map((cfg) => cfg.item)
+    .join(", ");
+
+  const scheduleBatch = (fn) =>
+    new Promise((resolve) => {
+      if ("requestIdleCallback" in window) {
+        requestIdleCallback(
+          () => {
+            try {
+              fn();
+            } finally {
+              resolve();
+            }
+          },
+          { timeout: 50 },
+        );
+      } else {
+        requestAnimationFrame(() => {
+          try {
+            fn();
+          } finally {
+            resolve();
+          }
+        });
+      }
+    });
+
   /**
-   * Orchestrates UI decoration for episodes, series, and seasons.
-   * Replaces previous EpisodeMarker logic with unified ContentDecorator.
-   * Airbnb JS Style Guide compliant.
+   * Decorates eligible items using a single DOM traversal and idle batching.
    */
   const applyAll = (root = document) => {
     const rootIsElement = root instanceof Element;
-    const gather = (selector) => [
-      ...(rootIsElement && root.matches(selector) ? [root] : []),
-      ...Utils.$$(selector, root),
-    ];
+    const candidates = [];
 
-    // Decorate episode items (table rows and cards)
-    for (const item of gather(Constants.EPISODE_ITEM_SELECTOR)) {
-      if (item.tagName === "TR" && item.closest("thead")) {
-        continue;
-      }
-      if (!Utils.$(Constants.EPISODE_LINK_SELECTOR, item)) {
-        continue;
-      }
-      ContentDecorator.decorateItem(item, {
-        type: "episode",
-        selector: Constants.EPISODE_LINK_SELECTOR,
-        onToggle: handleToggle,
-      });
+    if (rootIsElement && root.matches(ALL_ITEMS_SELECTOR)) {
+      candidates.push(root);
     }
 
-    // Decorate series items (headers and cards)
-    for (const item of gather(Constants.SERIES_ITEM_SELECTOR)) {
-      if (!Utils.$(Constants.SERIES_LINK_SELECTOR, item)) {
-        continue;
+    if (typeof root.querySelectorAll === "function") {
+      for (const el of root.querySelectorAll(ALL_ITEMS_SELECTOR)) {
+        candidates.push(el);
       }
-      // Avoid double decoration
-      if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === "series") {
-        continue;
-      }
-      ContentDecorator.decorateItem(item, {
-        type: "series",
-        selector: Constants.LINK_SELECTOR,
-        onToggle: handleToggle,
-        preferKind: "series",
-      });
     }
 
-    // Decorate season items (cards/lists)
-    for (const item of gather(Constants.SEASON_ITEM_SELECTOR)) {
-      if (!Utils.$(Constants.SEASON_LINK_SELECTOR, item)) {
-        continue;
-      }
-      // Avoid double decoration
-      if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === "season") {
-        continue;
-      }
-      if (item.closest("table, tr")) {
-        continue;
-      }
-      ContentDecorator.decorateItem(item, {
-        type: "season",
-        selector: Constants.LINK_SELECTOR,
-        onToggle: handleToggle,
-        preferKind: "season",
-      });
+    if (!candidates.length) {
+      return;
     }
 
-    // Decorate movie items (cards)
-    for (const item of gather(Constants.MOVIE_ITEM_SELECTOR)) {
-      if (!Utils.$(Constants.MOVIE_LINK_SELECTOR, item)) {
+    const batches = {
+      episode: [],
+      season: [],
+      series: [],
+      movie: [],
+    };
+
+    const detectionOrder = ["episode", "season", "series", "movie"];
+
+    for (const el of candidates) {
+      let type = null;
+      let cfg = null;
+
+      for (const candidateType of detectionOrder) {
+        const candidateCfg = SELECTORS[candidateType];
+        if (!el.matches(candidateCfg.item)) {
+          continue;
+        }
+        if (!candidateCfg.validate(el)) {
+          continue;
+        }
+        if (!Utils.$(candidateCfg.link, el)) {
+          continue;
+        }
+        if (
+          (candidateType === "series" || candidateType === "season") &&
+          el.getAttribute(Constants.ITEM_DECORATED_ATTR) === candidateType
+        ) {
+          continue;
+        }
+        type = candidateType;
+        cfg = candidateCfg;
+        break;
+      }
+
+      if (!type || !cfg) {
         continue;
       }
-      ContentDecorator.decorateItem(item, {
-        type: "movie",
-        selector: Constants.LINK_SELECTOR,
-        onToggle: handleToggle,
-      });
+
+      batches[type].push(el);
     }
+
+    if (
+      !batches.episode.length &&
+      !batches.series.length &&
+      !batches.season.length &&
+      !batches.movie.length
+    ) {
+      return;
+    }
+
+    const run = async () => {
+      if (batches.episode.length) {
+        await scheduleBatch(() => {
+          for (const item of batches.episode) {
+            ContentDecorator.decorateItem(item, {
+              type: "episode",
+              selector: Constants.EPISODE_LINK_SELECTOR,
+              onToggle: handleToggle,
+            });
+          }
+        });
+      }
+
+      if (batches.season.length) {
+        await scheduleBatch(() => {
+          for (const item of batches.season) {
+            ContentDecorator.decorateItem(item, {
+              type: "season",
+              selector: Constants.LINK_SELECTOR,
+              onToggle: handleToggle,
+              preferKind: "season",
+            });
+          }
+        });
+      }
+
+      if (batches.series.length) {
+        await scheduleBatch(() => {
+          for (const item of batches.series) {
+            ContentDecorator.decorateItem(item, {
+              type: "series",
+              selector: Constants.LINK_SELECTOR,
+              onToggle: handleToggle,
+              preferKind: "series",
+            });
+          }
+        });
+      }
+
+      if (batches.movie.length) {
+        await scheduleBatch(() => {
+          for (const item of batches.movie) {
+            ContentDecorator.decorateItem(item, {
+              type: "movie",
+              selector: Constants.LINK_SELECTOR,
+              onToggle: handleToggle,
+            });
+          }
+        });
+      }
+    };
+
+    void run();
   };
 
   const observerCallback = (nodes = []) => {
