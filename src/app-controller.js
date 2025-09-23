@@ -15,6 +15,30 @@ import withErrorHandling from "./error-handler.js";
  */
 const AppController = (() => {
   let syncChannel = null;
+  let cleanupTasks = new Set();
+  const registerCleanup = (fn) => {
+    if (typeof fn !== "function") {
+      return () => {};
+    }
+    cleanupTasks.add(fn);
+    return () => cleanupTasks.delete(fn);
+  };
+
+  const runCleanup = () => {
+    if (cleanupTasks.size === 0) {
+      return;
+    }
+    for (const task of cleanupTasks) {
+      try {
+        task();
+      } catch (error) {
+        console.error("Cleanup task failed:", error);
+      }
+    }
+    cleanupTasks.clear();
+  };
+
+  let storeSubscribed = false;
 
   /**
    * Orchestrates UI decoration for episodes, series, and seasons.
@@ -339,85 +363,99 @@ const AppController = (() => {
 
   const setupSyncChannel = () => {
     if ("BroadcastChannel" in window) {
-      syncChannel = new BroadcastChannel(Constants.SYNC_CHANNEL_NAME);
-      syncChannel.onmessage = async (event) => {
+      const channel = new BroadcastChannel(Constants.SYNC_CHANNEL_NAME);
+      const onMessage = async (event) => {
         const { id, seen } = event.data || {};
         await withErrorHandling(() => Store.receiveSync(id, seen), {
           logContext: "BroadcastChannel receiveSync",
         });
       };
-    } else {
-      // Fallback to localStorage events
-      window.addEventListener("storage", async (event) => {
-        if (event.key === Constants.SYNC_CHANNEL_NAME && event.newValue) {
-          await withErrorHandling(
-            async () => {
-              const data = JSON.parse(event.newValue);
-              await Store.receiveSync(data.id, data.seen);
-            },
-            { logContext: "LocalStorage sync event" },
-          );
+      channel.onmessage = onMessage;
+      syncChannel = channel;
+
+      registerCleanup(() => {
+        try {
+          channel.onmessage = null;
+          channel.close();
+        } catch (error) {
+          console.warn("BroadcastChannel close failed:", error);
+        } finally {
+          if (syncChannel === channel) {
+            syncChannel = null;
+          }
         }
       });
+      return;
     }
+
+    const storageHandler = async (event) => {
+      if (event.key === Constants.SYNC_CHANNEL_NAME && event.newValue) {
+        await withErrorHandling(
+          async () => {
+            const data = JSON.parse(event.newValue);
+            await Store.receiveSync(data.id, data.seen);
+          },
+          { logContext: "LocalStorage sync event" },
+        );
+      }
+    };
+
+    window.addEventListener("storage", storageHandler);
+    registerCleanup(() => {
+      window.removeEventListener("storage", storageHandler);
+    });
+    syncChannel = null;
   };
 
   const setupGlobalClickListener = () => {
-    document.addEventListener(
-      "click",
-      async (event) => {
-        const link = event.target?.closest("a[href]");
-        if (!link) {
-          return;
-        }
+    const clickHandler = async (event) => {
+      const link = event.target?.closest("a[href]");
+      if (!link) {
+        return;
+      }
 
-        // Solo interceptar click izquierdo “normal” (sin Ctrl/Cmd/Shift/Alt)
-        const isPlainLeftClick =
-          event.button === 0 &&
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.shiftKey &&
-          !event.altKey;
+      // Only intercept plain left clicks (no modifier keys)
+      const isPlainLeftClick =
+        event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 
-        const pathInfo = PathAnalyzer.analyze(link.href);
+      const pathInfo = PathAnalyzer.analyze(link.href);
 
-        if (!pathInfo.isValid) {
-          return;
-        }
+      if (!pathInfo.isValid) {
+        return;
+      }
 
-        // Only auto-mark episodes and movies when clicking
-        if (
-          pathInfo.type !== PathAnalyzer.EntityType.EPISODE &&
-          pathInfo.type !== PathAnalyzer.EntityType.MOVIE
-        ) {
-          return;
-        }
+      if (
+        pathInfo.type !== PathAnalyzer.EntityType.EPISODE &&
+        pathInfo.type !== PathAnalyzer.EntityType.MOVIE
+      ) {
+        return;
+      }
 
-        // If already marked as seen, do nothing
-        if (Store.getStatus(pathInfo.type, pathInfo.id) === "seen") {
-          return;
-        }
+      if (Store.getStatus(pathInfo.type, pathInfo.id) === "seen") {
+        return;
+      }
 
-        // Mark as seen and propagate
-        if (isPlainLeftClick) {
-          event.preventDefault();
-        }
-        await handleToggle(
-          pathInfo.type,
-          pathInfo.id,
-          Store.getStatus(pathInfo.type, pathInfo.id),
-          link.closest("tr, .episode, .movie"),
-        );
+      if (isPlainLeftClick) {
+        event.preventDefault();
+      }
+      await handleToggle(
+        pathInfo.type,
+        pathInfo.id,
+        Store.getStatus(pathInfo.type, pathInfo.id),
+        link.closest("tr, .episode, .movie"),
+      );
 
-        // Synchronize across tabs
-        emitSyncUpdate(pathInfo.type, pathInfo.id);
+      emitSyncUpdate(pathInfo.type, pathInfo.id);
 
-        if (isPlainLeftClick) {
-          window.location.assign(link.href);
-        }
-      },
-      { capture: true, passive: false },
-    );
+      if (isPlainLeftClick) {
+        window.location.assign(link.href);
+      }
+    };
+
+    document.addEventListener("click", clickHandler, { capture: true, passive: false });
+    registerCleanup(() => {
+      document.removeEventListener("click", clickHandler, { capture: true });
+    });
   };
 
   // Handles state changes from the Store and updates the UI accordingly.
@@ -482,6 +520,8 @@ const AppController = (() => {
 
   const teardown = () => {
     DOMObserver.disconnect();
+    runCleanup();
+    syncChannel = null;
   };
 
   /**
@@ -505,8 +545,11 @@ const AppController = (() => {
     // Inject global styles
     UIManager.injectCSS();
 
-    // Subscribe to state changes for real-time UI updates
-    Store.subscribe(handleStateChange);
+    // Subscribe to state changes for real-time UI updates (idempotent)
+    if (!storeSubscribed) {
+      Store.subscribe(handleStateChange);
+      storeSubscribed = true;
+    }
 
     // Load persistent seen-state from DB
     await Store.load();
@@ -541,8 +584,11 @@ const AppController = (() => {
     }
   };
 
-  window.addEventListener("pageshow", (e) => {
-    if (e.persisted) {
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) {
+      setupSyncChannel();
+      setupGlobalClickListener();
+
       DOMObserver.observe(observerCallback, { observeAttributes: false });
       applyAll();
     }
