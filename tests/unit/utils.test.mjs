@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, jest, test } from "@jest/globals";
-import Utils from "./utils";
+import Utils from "../../src/utils.js";
 
 describe("Utils", () => {
   afterEach(() => {
