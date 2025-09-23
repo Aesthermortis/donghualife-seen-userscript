@@ -24,4 +24,12 @@ export default {
   // (Optional) Enable V8 coverage and basic include patterns.
   // coverageProvider: "v8",
   // collectCoverageFrom: ["src/**/*.js", "!src/**/*.test.js"]
+
+  // Mock non-JS file imports to prevent syntax errors.
+  transform: {
+    // Keep existing JS/MJS transform behavior
+    "^.+\\.(js|mjs)$": "babel-jest",
+    // Return an empty module for CSS files
+    "^.+\\.css$": "<rootDir>/tests/setup/jest.css-transform.cjs",
+  },
 };
