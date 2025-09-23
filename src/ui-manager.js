@@ -60,6 +60,37 @@ const UIManager = (() => {
     return overlay;
   };
 
+  const lockScroll = () => {
+    const { body, documentElement } = document;
+    if (!body || body.dataset.usDhlScrollLocked === "true") {
+      return;
+    }
+    const prevOverflow = body.style.overflow || "";
+    const prevPaddingRight = body.style.paddingRight || "";
+    const scrollbarWidth = Math.max(window.innerWidth - documentElement.clientWidth, 0);
+    body.dataset.usDhlScrollLocked = "true";
+    body.dataset.usDhlPrevOverflow = prevOverflow;
+    body.dataset.usDhlPrevPaddingRight = prevPaddingRight;
+    body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+  };
+
+  const unlockScroll = () => {
+    const { body } = document;
+    if (!body || body.dataset.usDhlScrollLocked !== "true") {
+      return;
+    }
+    const prevOverflow = body.dataset.usDhlPrevOverflow ?? "";
+    const prevPaddingRight = body.dataset.usDhlPrevPaddingRight ?? "";
+    body.style.overflow = prevOverflow;
+    body.style.paddingRight = prevPaddingRight;
+    delete body.dataset.usDhlScrollLocked;
+    delete body.dataset.usDhlPrevOverflow;
+    delete body.dataset.usDhlPrevPaddingRight;
+  };
+
   const removeExistingModal = (overlay) => {
     const existing = Utils.$(`.${modalClass}`, overlay);
     if (existing) {
@@ -78,6 +109,7 @@ const UIManager = (() => {
     removeExistingModal(overlay);
     if (!overlay.childElementCount) {
       overlay.remove();
+      unlockScroll();
     }
   };
 
@@ -199,6 +231,7 @@ const UIManager = (() => {
     }
 
     overlay.appendChild(modal);
+    lockScroll();
 
     const restoreFocus = () => {
       if (!previouslyFocusedElement || typeof previouslyFocusedElement.focus !== "function") {
