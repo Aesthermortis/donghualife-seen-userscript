@@ -182,13 +182,16 @@ const AppController = (() => {
     }
 
     const seen = Store.getStatus(type, id) === "seen";
+    const entity = Store.get(type, id);
+    const timestamp = typeof entity?.t === "number" ? entity.t : Date.now();
+    const payload = { id, seen, t: timestamp };
 
     if (syncChannel) {
-      syncChannel.postMessage({ id, seen });
+      syncChannel.postMessage(payload);
       return;
     }
 
-    localStorage.setItem(Constants.SYNC_CHANNEL_NAME, JSON.stringify({ id, seen }));
+    localStorage.setItem(Constants.SYNC_CHANNEL_NAME, JSON.stringify(payload));
     localStorage.removeItem(Constants.SYNC_CHANNEL_NAME);
   };
 
@@ -365,8 +368,8 @@ const AppController = (() => {
     if ("BroadcastChannel" in window) {
       const channel = new BroadcastChannel(Constants.SYNC_CHANNEL_NAME);
       const onMessage = async (event) => {
-        const { id, seen } = event.data || {};
-        await withErrorHandling(() => Store.receiveSync(id, seen), {
+        const { id, seen, t } = event.data || {};
+        await withErrorHandling(() => Store.receiveSync(id, seen, t), {
           logContext: "BroadcastChannel receiveSync",
         });
       };
@@ -393,7 +396,7 @@ const AppController = (() => {
         await withErrorHandling(
           async () => {
             const data = JSON.parse(event.newValue);
-            await Store.receiveSync(data.id, data.seen);
+            await Store.receiveSync(data.id, data.seen, data.t);
           },
           { logContext: "LocalStorage sync event" },
         );

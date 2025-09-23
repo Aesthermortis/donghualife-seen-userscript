@@ -84,6 +84,15 @@ const Store = (() => {
     return next;
   }
 
+  const supportsWebLocks = typeof navigator !== "undefined" && !!navigator?.locks?.request;
+
+  const withEntityLock = (entityType, id, fn) => {
+    if (!supportsWebLocks || !id) {
+      return fn();
+    }
+    const name = "us-dhl:" + entityType + ":" + id;
+    return navigator.locks.request(name, { mode: "exclusive" }, fn);
+  };
   // Map entity types to their respective stores
   async function load() {
     for (const store of Object.values(TYPE_TO_STORE)) {
@@ -105,79 +114,93 @@ const Store = (() => {
   // Universal: sets (or overwrites) the state of an entity
   async function setState(entityType, id, state, extraFields = {}) {
     const store = TYPE_TO_STORE[entityType];
-    const obj = caches[store].get(id) || { id, t: Date.now() };
-    obj.state = state;
-    obj.t = Date.now();
+    return enqueueById(id, () =>
+      withEntityLock(entityType, id, () =>
+        withErrorHandling(
+          async () => {
+            const freshFromDb = await DatabaseManager.get(store, id);
+            const cached = caches[store].get(id);
+            const base = freshFromDb || cached || { id };
+            const obj = { ...base, id };
 
-    // Auto-fill series_id and season_id from path if missing
-    const pathInfo = PathAnalyzer.analyze(id);
+            const timestamp = typeof extraFields.t === "number" ? extraFields.t : Date.now();
+            obj.state = state;
+            obj.t = timestamp;
 
-    if (pathInfo.isValid) {
-      if (entityType === "season" && !obj.series_id && pathInfo.hierarchy.seriesId) {
-        obj.series_id = pathInfo.hierarchy.seriesId;
-      }
+            const pathInfo = PathAnalyzer.analyze(id);
 
-      if (entityType === "episode") {
-        if (!obj.season_id && pathInfo.hierarchy.seasonId) {
-          obj.season_id = pathInfo.hierarchy.seasonId;
-        }
-        if (!obj.series_id && pathInfo.hierarchy.seriesId) {
-          obj.series_id = pathInfo.hierarchy.seriesId;
-        }
-      }
+            if (pathInfo.isValid) {
+              if (entityType === "season" && !obj.series_id && pathInfo.hierarchy.seriesId) {
+                obj.series_id = pathInfo.hierarchy.seriesId;
+              }
 
-      // Lazy migration: if name is missing, fill from PathAnalyzer
-      if (entityType === "series" && !obj.name) {
-        const name = PathAnalyzer.formatSeriesName(id);
-        if (name) {
-          obj.name = name;
-        }
-      }
-      if (entityType === "season" && !obj.name) {
-        const name = PathAnalyzer.formatSeasonName(id);
-        if (name) {
-          obj.name = name;
-        }
-      }
-    }
+              if (entityType === "episode") {
+                if (!obj.season_id && pathInfo.hierarchy.seasonId) {
+                  obj.season_id = pathInfo.hierarchy.seasonId;
+                }
+                if (!obj.series_id && pathInfo.hierarchy.seriesId) {
+                  obj.series_id = pathInfo.hierarchy.seriesId;
+                }
+              }
 
-    // Allow manual override of any fields
-    Object.assign(obj, extraFields);
+              if (entityType === "series" && !obj.name) {
+                const name = PathAnalyzer.formatSeriesName(id);
+                if (name) {
+                  obj.name = name;
+                }
+              }
+              if (entityType === "season" && !obj.name) {
+                const name = PathAnalyzer.formatSeasonName(id);
+                if (name) {
+                  obj.name = name;
+                }
+              }
+            }
 
-    return withErrorHandling(
-      async () => {
-        await DatabaseManager.set(store, id, obj);
-        caches[store].set(id, obj);
-        notify &&
-          notify({
-            type: entityType.toUpperCase() + "_CHANGE",
-            payload: { id, state, ...extraFields },
-          });
-      },
-      {
-        errorMessageKey: "toastErrorSaving",
-        logContext: `Error saving state for store=${store}, id=${id}`,
-      },
+            Object.assign(obj, extraFields);
+            if (typeof obj.t !== "number") {
+              obj.t = timestamp;
+            }
+
+            await DatabaseManager.set(store, id, obj);
+            caches[store].set(id, obj);
+            notify &&
+              notify({
+                type: entityType.toUpperCase() + "_CHANGE",
+                payload: { id, state, ...extraFields },
+              });
+            return obj;
+          },
+          {
+            errorMessageKey: "toastErrorSaving",
+            logContext: `Error saving state for store=${store}, id=${id}`,
+          },
+        ),
+      ),
     );
   }
 
   // Universal: removes an entity
   async function remove(entityType, id) {
     const store = TYPE_TO_STORE[entityType];
-    return withErrorHandling(
-      async () => {
-        await DatabaseManager.delete(store, id);
-        caches[store].delete(id);
-        notify &&
-          notify({
-            type: entityType.toUpperCase() + "_REMOVE",
-            payload: { id },
-          });
-      },
-      {
-        errorMessageKey: "toastErrorRemoving",
-        logContext: `Error removing store=${store}, id=${id}`,
-      },
+    return enqueueById(id, () =>
+      withEntityLock(entityType, id, () =>
+        withErrorHandling(
+          async () => {
+            await DatabaseManager.delete(store, id);
+            caches[store].delete(id);
+            notify &&
+              notify({
+                type: entityType.toUpperCase() + "_REMOVE",
+                payload: { id },
+              });
+          },
+          {
+            errorMessageKey: "toastErrorRemoving",
+            logContext: `Error removing store=${store}, id=${id}`,
+          },
+        ),
+      ),
     );
   }
 
@@ -323,7 +346,7 @@ const Store = (() => {
    * @param {string} id - The unique identifier of the item.
    * @param {boolean} seen - Whether the item is marked as seen.
    */
-  async function receiveSync(id, seen) {
+  async function receiveSync(id, seen, t) {
     if (!id) {
       return;
     }
@@ -334,7 +357,6 @@ const Store = (() => {
       return;
     }
 
-    // Only synchronize episodes and movies
     if (
       pathInfo.type !== PathAnalyzer.EntityType.EPISODE &&
       pathInfo.type !== PathAnalyzer.EntityType.MOVIE
@@ -342,9 +364,18 @@ const Store = (() => {
       return;
     }
 
-    await enqueueById(id, () =>
-      seen ? setState(pathInfo.type, id, "seen") : remove(pathInfo.type, id),
-    );
+    const current = get(pathInfo.type, id);
+    if (current?.t && typeof t === "number" && current.t > t) {
+      return;
+    }
+
+    if (seen) {
+      const extras = typeof t === "number" ? { t } : {};
+      await setState(pathInfo.type, id, "seen", extras);
+      return;
+    }
+
+    await remove(pathInfo.type, id);
   }
 
   // Expose API
