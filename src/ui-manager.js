@@ -7,6 +7,19 @@ import I18n from "./i18n.js";
  * @description Handles all direct DOM manipulations for UI elements like toasts and modals.
  */
 const UIManager = (() => {
+  const modalOverlayClass = "us-dhl-modal-overlay";
+  const modalClass = "us-dhl-modal";
+  const focusableSelector = [
+    "a[href]",
+    "button:not([disabled])",
+    "textarea:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+    '[role="button"]',
+  ].join(",");
+  let modalIdCounter = 0;
+
   const getToastContainer = () => {
     let container = Utils.$("#us-dhl-toast-container");
     if (!container) {
@@ -17,13 +30,205 @@ const UIManager = (() => {
     }
     return container;
   };
-  const createModal = (content) => {
-    const overlay = document.createElement("div");
-    overlay.className = "us-dhl-modal-overlay";
-    overlay.innerHTML = `<div class="us-dhl-modal" role="dialog" aria-modal="true">${content}</div>`;
-    document.body.appendChild(overlay);
+
+  const defaultSanitize = (html) => {
+    const value = html == null ? "" : String(html);
+    const purifier = typeof globalThis !== "undefined" ? globalThis.DOMPurify : undefined;
+    if (purifier && typeof purifier.sanitize === "function") {
+      return purifier.sanitize(value, {
+        ALLOW_UNKNOWN_PROTOCOLS: false,
+        FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "link"],
+        FORBID_ATTR: ["onerror", "onload", "onclick", "style"],
+        USE_PROFILES: { html: true, svg: false, mathMl: false },
+      });
+    }
+    const temp = document.createElement("div");
+    temp.textContent = value;
+    return temp.innerHTML;
+  };
+
+  const ensureOverlay = () => {
+    let overlay = Utils.$(`.${modalOverlayClass}`);
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.className = modalOverlayClass;
+      overlay.setAttribute("data-ui", "overlay");
+      overlay.tabIndex = -1;
+      document.body.appendChild(overlay);
+    } else if (!document.body.contains(overlay)) {
+      document.body.appendChild(overlay);
+    }
     return overlay;
   };
+
+  const removeExistingModal = (overlay) => {
+    const existing = Utils.$(`.${modalClass}`, overlay);
+    if (existing) {
+      existing.remove();
+    }
+  };
+
+  const destroyModal = (overlay = Utils.$(`.${modalOverlayClass}`)) => {
+    if (!overlay) {
+      return;
+    }
+    if (typeof overlay._modalCleanup === "function") {
+      overlay._modalCleanup();
+      overlay._modalCleanup = undefined;
+    }
+    removeExistingModal(overlay);
+    if (!overlay.childElementCount) {
+      overlay.remove();
+    }
+  };
+
+  const attachModalBehaviors = (overlay, modal, state) => {
+    if (typeof overlay._modalCleanup === "function") {
+      overlay._modalCleanup();
+    }
+
+    const getFocusable = () =>
+      Utils.$$(focusableSelector, modal).filter(
+        (el) => !el.hasAttribute("disabled") && Utils.isElementVisible(el),
+      );
+
+    const focusFirst = () => {
+      const focusable = getFocusable();
+      const target = focusable[0] || modal;
+      requestAnimationFrame(() => {
+        target.focus();
+      });
+    };
+
+    const onKeyDown = (event) => {
+      if (!document.body.contains(modal)) {
+        return;
+      }
+      if (event.key === "Escape" && state.closeOnEscape) {
+        event.preventDefault();
+        state.onRequestClose?.("escape");
+        return;
+      }
+      if (event.key === "Tab" && state.trapFocus) {
+        const focusable = getFocusable();
+        if (focusable.length === 0) {
+          event.preventDefault();
+          modal.focus();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const { activeElement } = document;
+        if (event.shiftKey) {
+          if (activeElement === first || !modal.contains(activeElement)) {
+            event.preventDefault();
+            last.focus();
+          }
+        } else if (activeElement === last || !modal.contains(activeElement)) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    const onOverlayClick = (event) => {
+      if (event.target === overlay && state.closeOnOverlay) {
+        state.onRequestClose?.("overlay");
+      }
+    };
+
+    const stopPropagation = (event) => {
+      event.stopPropagation();
+    };
+
+    document.addEventListener("keydown", onKeyDown, true);
+    overlay.addEventListener("click", onOverlayClick);
+    modal.addEventListener("click", stopPropagation);
+    focusFirst();
+
+    overlay._modalCleanup = () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      overlay.removeEventListener("click", onOverlayClick);
+      modal.removeEventListener("click", stopPropagation);
+    };
+  };
+
+  const createModal = (content, options = {}) => {
+    const {
+      allowHTML = false,
+      sanitize = defaultSanitize,
+      labelledById = null,
+      trapFocus = true,
+      closeOnEscape = true,
+      closeOnOverlay = true,
+    } = options;
+
+    const overlay = ensureOverlay();
+    removeExistingModal(overlay);
+
+    const modal = document.createElement("div");
+    modal.className = modalClass;
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.tabIndex = -1;
+
+    if (labelledById) {
+      modal.setAttribute("aria-labelledby", labelledById);
+    }
+
+    if (content instanceof Node) {
+      modal.appendChild(content);
+    } else if (typeof content === "string") {
+      if (allowHTML) {
+        const safe = sanitize(content);
+        if (typeof safe === "string") {
+          modal.insertAdjacentHTML("afterbegin", safe);
+        } else if (safe instanceof Node) {
+          modal.appendChild(safe);
+        } else {
+          modal.textContent = "";
+        }
+      } else {
+        modal.textContent = content;
+      }
+    } else if (content != null) {
+      modal.textContent = String(content);
+    }
+
+    overlay.appendChild(modal);
+
+    const state = {
+      onRequestClose: () => destroyModal(overlay),
+      trapFocus,
+      closeOnEscape,
+      closeOnOverlay,
+    };
+
+    attachModalBehaviors(overlay, modal, state);
+
+    return {
+      overlay,
+      modal,
+      destroy: () => destroyModal(overlay),
+      setOnRequestClose: (fn) => {
+        if (typeof fn === "function") {
+          state.onRequestClose = fn;
+        }
+      },
+      updateOptions: ({ trapFocus: tf, closeOnEscape: ce, closeOnOverlay: co } = {}) => {
+        if (typeof tf === "boolean") {
+          state.trapFocus = tf;
+        }
+        if (typeof ce === "boolean") {
+          state.closeOnEscape = ce;
+        }
+        if (typeof co === "boolean") {
+          state.closeOnOverlay = co;
+        }
+      },
+    };
+  };
+
   return {
     injectCSS: () => {
       if (Utils.$("#us-dhl-seen-style")) {
@@ -43,31 +248,91 @@ const UIManager = (() => {
     },
     showConfirm: ({ title, text, okLabel = I18n.t("accept"), cancelLabel = I18n.t("cancel") }) =>
       new Promise((resolve) => {
-        const modalHTML = `<div class="us-dhl-modal-header">${title}</div><div class="us-dhl-modal-body"><p>${text}</p></div><div class="us-dhl-modal-footer"><button class="us-dhl-modal-btn secondary">${cancelLabel}</button><button class="us-dhl-modal-btn primary">${okLabel}</button></div>`;
-        const overlay = createModal(modalHTML);
+        const headerId = `us-dhl-modal-title-${++modalIdCounter}`;
+        const fragment = document.createDocumentFragment();
+
+        const header = document.createElement("div");
+        header.className = "us-dhl-modal-header";
+        header.id = headerId;
+        header.textContent = title;
+
+        const body = document.createElement("div");
+        body.className = "us-dhl-modal-body";
+        const paragraph = document.createElement("p");
+        paragraph.textContent = text;
+        body.appendChild(paragraph);
+
+        const footer = document.createElement("div");
+        footer.className = "us-dhl-modal-footer";
+        const cancelButton = document.createElement("button");
+        cancelButton.className = "us-dhl-modal-btn secondary";
+        cancelButton.type = "button";
+        cancelButton.textContent = cancelLabel;
+        const okButton = document.createElement("button");
+        okButton.className = "us-dhl-modal-btn primary";
+        okButton.type = "button";
+        okButton.textContent = okLabel;
+        footer.append(cancelButton, okButton);
+
+        fragment.append(header, body, footer);
+
+        const { destroy, setOnRequestClose } = createModal(fragment, {
+          labelledById: headerId,
+        });
+
         const close = (value) => {
-          overlay.remove();
+          destroy();
           resolve(value);
         };
-        Utils.$(".primary", overlay).addEventListener("click", () => close(true));
-        Utils.$(".secondary", overlay).addEventListener("click", () => close(false));
-        overlay.addEventListener("click", () => close(false));
-        Utils.$(".us-dhl-modal", overlay).addEventListener("click", (e) => e.stopPropagation());
+
+        setOnRequestClose(() => close(false));
+        cancelButton.addEventListener("click", () => close(false));
+        okButton.addEventListener("click", () => close(true));
       }),
     showPrompt: ({ title, text, okLabel = I18n.t("accept"), cancelLabel = I18n.t("cancel") }) =>
       new Promise((resolve) => {
-        const modalHTML = `<div class="us-dhl-modal-header">${title}</div><div class="us-dhl-modal-body"><p>${text}</p><textarea></textarea></div><div class="us-dhl-modal-footer"><button class="us-dhl-modal-btn secondary">${cancelLabel}</button><button class="us-dhl-modal-btn primary">${okLabel}</button></div>`;
-        const overlay = createModal(modalHTML);
-        const input = Utils.$("textarea", overlay);
+        const headerId = `us-dhl-modal-title-${++modalIdCounter}`;
+        const fragment = document.createDocumentFragment();
+
+        const header = document.createElement("div");
+        header.className = "us-dhl-modal-header";
+        header.id = headerId;
+        header.textContent = title;
+
+        const body = document.createElement("div");
+        body.className = "us-dhl-modal-body";
+        const paragraph = document.createElement("p");
+        paragraph.textContent = text;
+        const textarea = document.createElement("textarea");
+        body.append(paragraph, textarea);
+
+        const footer = document.createElement("div");
+        footer.className = "us-dhl-modal-footer";
+        const cancelButton = document.createElement("button");
+        cancelButton.className = "us-dhl-modal-btn secondary";
+        cancelButton.type = "button";
+        cancelButton.textContent = cancelLabel;
+        const okButton = document.createElement("button");
+        okButton.className = "us-dhl-modal-btn primary";
+        okButton.type = "button";
+        okButton.textContent = okLabel;
+        footer.append(cancelButton, okButton);
+
+        fragment.append(header, body, footer);
+
+        const { destroy, setOnRequestClose } = createModal(fragment, {
+          labelledById: headerId,
+        });
+
         const close = (value) => {
-          overlay.remove();
+          destroy();
           resolve(value);
         };
-        Utils.$(".primary", overlay).addEventListener("click", () => close(input.value));
-        Utils.$(".secondary", overlay).addEventListener("click", () => close(null));
-        overlay.addEventListener("click", () => close(null));
-        Utils.$(".us-dhl-modal", overlay).addEventListener("click", (e) => e.stopPropagation());
-        input.focus();
+
+        setOnRequestClose(() => close(null));
+        cancelButton.addEventListener("click", () => close(null));
+        okButton.addEventListener("click", () => close(textarea.value));
+        requestAnimationFrame(() => textarea.focus());
       }),
     showFilePicker: ({
       title,
@@ -77,25 +342,58 @@ const UIManager = (() => {
       cancelLabel = I18n.t("cancel"),
     }) =>
       new Promise((resolve) => {
-        const modalHTML = `<div class="us-dhl-modal-header">${title}</div><div class="us-dhl-modal-body"><p>${text}</p><input type="file" class="us-dhl-file-input" accept="${accept}"></div><div class="us-dhl-modal-footer"><button class="us-dhl-modal-btn secondary">${cancelLabel}</button><button class="us-dhl-modal-btn primary" disabled>${okLabel}</button></div>`;
-        const overlay = createModal(modalHTML);
-        const modal = Utils.$(".us-dhl-modal", overlay);
-        const input = Utils.$(".us-dhl-file-input", overlay);
-        const primary = Utils.$(".primary", overlay);
-        const secondary = Utils.$(".secondary", overlay);
+        const headerId = `us-dhl-modal-title-${++modalIdCounter}`;
+        const fragment = document.createDocumentFragment();
+
+        const header = document.createElement("div");
+        header.className = "us-dhl-modal-header";
+        header.id = headerId;
+        header.textContent = title;
+
+        const body = document.createElement("div");
+        body.className = "us-dhl-modal-body";
+        const paragraph = document.createElement("p");
+        paragraph.textContent = text;
+        const input = document.createElement("input");
+        input.type = "file";
+        input.className = "us-dhl-file-input";
+        input.accept = accept;
+        body.append(paragraph, input);
+
+        const footer = document.createElement("div");
+        footer.className = "us-dhl-modal-footer";
+        const cancelButton = document.createElement("button");
+        cancelButton.className = "us-dhl-modal-btn secondary";
+        cancelButton.type = "button";
+        cancelButton.textContent = cancelLabel;
+        const okButton = document.createElement("button");
+        okButton.className = "us-dhl-modal-btn primary";
+        okButton.type = "button";
+        okButton.textContent = okLabel;
+        okButton.disabled = true;
+        footer.append(cancelButton, okButton);
+
+        fragment.append(header, body, footer);
+
+        const { destroy, setOnRequestClose } = createModal(fragment, {
+          labelledById: headerId,
+        });
+
         let selectedFile = null;
 
         const close = (value) => {
-          overlay.remove();
+          destroy();
           resolve(value);
         };
 
+        setOnRequestClose(() => close(null));
+
         input.addEventListener("change", () => {
           selectedFile = input.files && input.files[0] ? input.files[0] : null;
-          primary.disabled = !selectedFile;
+          okButton.disabled = !selectedFile;
         });
 
-        primary.addEventListener("click", () => {
+        okButton.addEventListener("click", () => {
           if (!selectedFile) {
             input.click();
             return;
@@ -103,61 +401,123 @@ const UIManager = (() => {
           close(selectedFile);
         });
 
-        secondary.addEventListener("click", () => close(null));
-        overlay.addEventListener("click", () => close(null));
-        modal.addEventListener("click", (e) => e.stopPropagation());
-        input.focus();
+        cancelButton.addEventListener("click", () => close(null));
+        requestAnimationFrame(() => input.focus());
       }),
     showExport: ({ title, text, data }) => {
-      const modalHTML = `<div class="us-dhl-modal-header">${title}</div><div class="us-dhl-modal-body"><p>${text}</p><textarea readonly></textarea></div><div class="us-dhl-modal-footer"><button class="us-dhl-modal-btn primary">${I18n.t(
-        "close",
-      )}</button></div>`;
-      const overlay = createModal(modalHTML);
-      const textarea = Utils.$("textarea", overlay);
+      const headerId = `us-dhl-modal-title-${++modalIdCounter}`;
+      const fragment = document.createDocumentFragment();
+
+      const header = document.createElement("div");
+      header.className = "us-dhl-modal-header";
+      header.id = headerId;
+      header.textContent = title;
+
+      const body = document.createElement("div");
+      body.className = "us-dhl-modal-body";
+      const paragraph = document.createElement("p");
+      paragraph.textContent = text;
+      const textarea = document.createElement("textarea");
+      textarea.readOnly = true;
+      body.append(paragraph, textarea);
+
+      const footer = document.createElement("div");
+      footer.className = "us-dhl-modal-footer";
+      const closeButton = document.createElement("button");
+      closeButton.className = "us-dhl-modal-btn primary";
+      closeButton.type = "button";
+      closeButton.textContent = I18n.t("close");
+      footer.appendChild(closeButton);
+
+      fragment.append(header, body, footer);
+
+      const { destroy, setOnRequestClose } = createModal(fragment, {
+        labelledById: headerId,
+      });
+
       textarea.value = data;
-      const close = () => overlay.remove();
-      Utils.$(".primary", overlay).addEventListener("click", close);
-      overlay.addEventListener("click", close);
-      Utils.$(".us-dhl-modal", overlay).addEventListener("click", (e) => e.stopPropagation());
-      textarea.select();
+
+      const close = () => {
+        destroy();
+      };
+
+      setOnRequestClose(close);
+      closeButton.addEventListener("click", close);
+      requestAnimationFrame(() => {
+        textarea.select();
+      });
     },
     showSettingsMenu: ({ title, actions }) => {
-      const actionButtons = actions
-        .map(
-          (action, index) =>
-            `<button class="us-dhl-modal-btn ${
-              action.isDestructive ? "secondary" : "primary"
-            }" data-action-index="${index}">${action.label}</button>`,
-        )
-        .join("");
-      const modalHTML = `<div class="us-dhl-modal-header">${title}</div><div class="us-dhl-modal-body"><div class="us-dhl-settings-menu">${actionButtons}</div></div>`;
-      const overlay = createModal(modalHTML);
-      const close = () => overlay.remove();
-      Utils.$(".us-dhl-modal", overlay).addEventListener("click", (e) => {
-        e.stopPropagation();
-        const button = e.target.closest("[data-action-index]");
-        if (button) {
-          const actionIndex = parseInt(button.dataset.actionIndex, 10);
-          if (actions[actionIndex]?.onClick) {
-            actions[actionIndex].onClick();
-          }
-          if (!actions[actionIndex]?.keepOpen) {
-            close();
-          }
+      const headerId = `us-dhl-modal-title-${++modalIdCounter}`;
+      const fragment = document.createDocumentFragment();
+
+      const header = document.createElement("div");
+      header.className = "us-dhl-modal-header";
+      header.id = headerId;
+      header.textContent = title;
+
+      const body = document.createElement("div");
+      body.className = "us-dhl-modal-body";
+      const menu = document.createElement("div");
+      menu.className = "us-dhl-settings-menu";
+
+      actions.forEach((action, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `us-dhl-modal-btn ${action.isDestructive ? "secondary" : "primary"}`;
+        button.dataset.actionIndex = String(index);
+        button.textContent = action.label;
+        menu.appendChild(button);
+      });
+
+      body.appendChild(menu);
+      fragment.append(header, body);
+
+      const { modal, destroy, setOnRequestClose } = createModal(fragment, {
+        labelledById: headerId,
+        closeOnOverlay: true,
+      });
+
+      const close = () => {
+        destroy();
+      };
+
+      setOnRequestClose(close);
+
+      modal.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-action-index]");
+        if (!button) {
+          return;
+        }
+        const actionIndex = parseInt(button.dataset.actionIndex || "", 10);
+        const selectedAction = Number.isInteger(actionIndex) ? actions[actionIndex] : undefined;
+        if (!selectedAction) {
+          return;
+        }
+        if (typeof selectedAction.onClick === "function") {
+          selectedAction.onClick();
+        }
+        if (!selectedAction.keepOpen) {
+          close();
         }
       });
-      overlay.addEventListener("click", close);
     },
     showProgress: (message) => {
       const toast = document.createElement("div");
       toast.className = "us-dhl-toast";
-      toast.innerHTML = `<div>${message}</div><progress value="0" max="100" class="us-dhl-progress"></progress>`;
+      const messageWrapper = document.createElement("div");
+      messageWrapper.textContent = message;
+      const progress = document.createElement("progress");
+      progress.value = 0;
+      progress.max = 100;
+      progress.className = "us-dhl-progress";
+      toast.append(messageWrapper, progress);
       getToastContainer().appendChild(toast);
       return {
         update: (value) => {
-          const progress = toast.querySelector("progress");
-          if (progress) {
-            progress.value = value;
+          const progressEl = toast.querySelector("progress");
+          if (progressEl) {
+            progressEl.value = value;
           }
         },
         close: (delay = 1000) => {
