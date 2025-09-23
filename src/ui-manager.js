@@ -16,7 +16,6 @@ const UIManager = (() => {
     "input:not([disabled])",
     "select:not([disabled])",
     '[tabindex]:not([tabindex="-1"])',
-    '[role="button"]',
   ].join(",");
   let modalIdCounter = 0;
 
