@@ -1,12 +1,25 @@
 {
   "branches": ["master"],
   "plugins": [
-    ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
     [
       "@semantic-release/release-notes-generator",
-      { "preset": "conventionalcommits", "writerOpts": { "bullet": "-" } }
+      {
+        "preset": "conventionalcommits",
+        "writerOpts": { "bullet": "-" }
+      }
     ],
-    ["@semantic-release/changelog", { "changelogFile": "CHANGELOG.md" }],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md"
+      }
+    ],
     [
       "@semantic-release/exec",
       {
@@ -17,7 +30,10 @@
       "@semantic-release/github",
       {
         "assets": [
-          { "path": "dist/donghualife-seen.user.js", "label": "Dongualife Seen userscript" }
+          {
+            "path": "dist/donghualife-seen.user.js",
+            "label": "Dongualife Seen userscript"
+          }
         ]
       }
     ],
