@@ -163,6 +163,10 @@ const UIManager = (() => {
       closeOnOverlay = true,
     } = options;
 
+    const activeElement = typeof document !== "undefined" ? document.activeElement : null;
+    const previouslyFocusedElement =
+      activeElement && typeof activeElement.focus === "function" ? activeElement : null;
+
     const overlay = ensureOverlay();
     removeExistingModal(overlay);
 
@@ -197,8 +201,31 @@ const UIManager = (() => {
 
     overlay.appendChild(modal);
 
+    const restoreFocus = () => {
+      if (!previouslyFocusedElement || typeof previouslyFocusedElement.focus !== "function") {
+        return;
+      }
+      if (previouslyFocusedElement.isConnected === false) {
+        return;
+      }
+      if (typeof document.contains === "function" && !document.contains(previouslyFocusedElement)) {
+        return;
+      }
+      previouslyFocusedElement.focus();
+    };
+
+    let isDestroyed = false;
+    const destroyInstance = () => {
+      if (isDestroyed) {
+        return;
+      }
+      isDestroyed = true;
+      destroyModal(overlay);
+      restoreFocus();
+    };
+
     const state = {
-      onRequestClose: () => destroyModal(overlay),
+      onRequestClose: () => destroyInstance(),
       trapFocus,
       closeOnEscape,
       closeOnOverlay,
@@ -209,7 +236,7 @@ const UIManager = (() => {
     return {
       overlay,
       modal,
-      destroy: () => destroyModal(overlay),
+      destroy: destroyInstance,
       setOnRequestClose: (fn) => {
         if (typeof fn === "function") {
           state.onRequestClose = fn;
