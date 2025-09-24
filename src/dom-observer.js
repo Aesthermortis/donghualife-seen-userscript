@@ -169,13 +169,76 @@ const DOMObserver = (() => {
   };
 
   const observe = (callback, options = {}) => {
-    const { observeAttributes = false, attributeFilter } = options;
+    const {
+      observeAttributes = false,
+      attributeFilter,
+      rate = { throttleMs: 120, debounceMs: 180 },
+      batchSize = 12,
+      nodeFilter = null,
+    } = options || {};
 
     disconnect();
 
-    const rateLimited = Utils.makeRateLimited(() => flushPending(callback), {
-      throttleMs: 120,
-      debounceMs: 180,
+    const schedule = (fn) =>
+      new Promise((resolve) => {
+        if ("requestIdleCallback" in window) {
+          requestIdleCallback(
+            () => {
+              try {
+                fn();
+              } finally {
+                resolve();
+              }
+            },
+            { timeout: 50 },
+          );
+        } else {
+          requestAnimationFrame(() => {
+            try {
+              fn();
+            } finally {
+              resolve();
+            }
+          });
+        }
+      });
+
+    const processPending = async () => {
+      let nodes = [];
+      const collector = (collected) => {
+        nodes = collected;
+      };
+      flushPending(collector);
+      if (!nodes.length) {
+        return;
+      }
+      if (typeof nodeFilter === "function") {
+        nodes = nodes.filter((node) => {
+          try {
+            return nodeFilter(node);
+          } catch (error) {
+            void error;
+            return true;
+          }
+        });
+      }
+      if (!nodes.length) {
+        return;
+      }
+      if (batchSize > 0 && nodes.length > batchSize) {
+        for (let i = 0; i < nodes.length; i += batchSize) {
+          const chunk = nodes.slice(i, i + batchSize);
+
+          await schedule(() => callback(chunk));
+        }
+        return;
+      }
+      callback(nodes);
+    };
+
+    const rateLimited = Utils.makeRateLimited(processPending, {
+      throttleMs: rate?.throttleMs ?? 120,
+      debounceMs: rate?.debounceMs ?? 180,
     });
 
     observer = new MutationObserver((mutationsList) => {

@@ -95,6 +95,28 @@ const AppController = (() => {
       }
     });
 
+  const createRelevantNodeFilter = () => (node) => {
+    if (!(node instanceof Element)) {
+      return false;
+    }
+    if (node.matches(ALL_ITEMS_SELECTOR)) {
+      return true;
+    }
+    return (
+      typeof node.querySelector === "function" && node.querySelector(ALL_ITEMS_SELECTOR) !== null
+    );
+  };
+
+  const observeDomChanges = () => {
+    const nodeFilter = createRelevantNodeFilter();
+    DOMObserver.observe(observerCallback, {
+      observeAttributes: false,
+      rate: { throttleMs: 120, debounceMs: 180 },
+      batchSize: 12,
+      nodeFilter,
+    });
+  };
+
   /**
    * Decorates eligible items using a single DOM traversal and idle batching.
    */
@@ -223,16 +245,33 @@ const AppController = (() => {
   };
 
   const observerCallback = (nodes = []) => {
-    if (Array.isArray(nodes) && nodes.length > 0) {
-      const seen = new Set();
-      for (const node of nodes) {
-        if (node instanceof Element && !seen.has(node)) {
-          seen.add(node);
-          applyAll(node);
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      applyAll();
+      return;
+    }
+
+    const roots = [];
+    for (const node of nodes) {
+      if (!(node instanceof Element)) {
+        continue;
+      }
+      if (roots.some((existing) => existing.contains(node))) {
+        continue;
+      }
+      for (let i = roots.length - 1; i >= 0; i -= 1) {
+        if (node.contains(roots[i])) {
+          roots.splice(i, 1);
         }
       }
-    } else {
-      applyAll();
+      roots.push(node);
+    }
+
+    if (!roots.length) {
+      return;
+    }
+
+    for (const root of roots) {
+      applyAll(root);
     }
   };
 
@@ -674,7 +713,7 @@ const AppController = (() => {
     applyAll();
 
     // Reactively decorate episodes for dynamic DOM changes
-    DOMObserver.observe(observerCallback, { observeAttributes: false });
+    observeDomChanges();
 
     const currentPathInfo = PathAnalyzer.analyze(location.pathname);
 
@@ -697,7 +736,7 @@ const AppController = (() => {
       setupSyncChannel();
       setupGlobalClickListener();
 
-      DOMObserver.observe(observerCallback, { observeAttributes: false });
+      observeDomChanges();
       applyAll();
     }
   });
