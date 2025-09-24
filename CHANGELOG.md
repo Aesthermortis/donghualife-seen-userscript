@@ -1,3 +1,20 @@
+## [3.5.0](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.4.1...v3.5.0) (2025-09-24)
+
+### Features
+
+* **dom-observer:** enhance DOM observation with node filtering and batching ([1c7b91a](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/1c7b91aa78b108e611f99ed45b76a434bfe46c01))
+* **store:** serialize cross-tab writes with Web Locks and commit ordering ([0bce2e3](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/0bce2e3aee5d70199f26e25ed8bda48205c22763))
+* **test:** migrate jest setup and test layout ([9ace678](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/9ace678e8233fa6d68c4ee5a409187cd73e98095))
+* **ui:** lock and restore body scroll when modal is open ([4b412ed](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/4b412ed34ddd16ede823e285994412eecf3a91f3))
+
+### Bug Fixes
+
+* **ui:** restrict modal focus trap to tabbable elements ([a9bcc42](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/a9bcc425d149ff128b9b5e1aedd8a8052341a280))
+
+### Performance Improvements
+
+* **core:** batch DOM decorations with single-pass idle scheduler ([e65000f](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/e65000ff6d147860760407e2d5073e4721f3340d))
+
 ## [3.4.1](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.4.0...v3.4.1) (2025-09-22)
 
 ### Bug Fixes
