@@ -1,3 +1,9 @@
+## [3.6.1](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.6.0...v3.6.1) (2025-09-26)
+
+### Bug Fixes
+
+- **app-controller:** keep completed parents when tracking episodes ([d1760b2](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/d1760b22bee74a42f163975522e89e7cdf0a395b))
+
 ## [3.6.0](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.5.0...v3.6.0) (2025-09-26)
 
 ### Features
