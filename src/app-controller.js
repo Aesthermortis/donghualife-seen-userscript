@@ -293,7 +293,7 @@ const AppController = (() => {
     // Propagate to Season
     if (seasonId) {
       const seasonStatus = Store.getStatus("season", seasonId);
-      if (seasonStatus !== STATE_WATCHING) {
+      if (seasonStatus === STATE_UNTRACKED) {
         const extraFields = {};
         if (seriesId) {
           extraFields.series_id = seriesId;
@@ -302,24 +302,20 @@ const AppController = (() => {
         extraFields.name = seasonName;
 
         await Store.setState("season", seasonId, STATE_WATCHING, extraFields);
-        if (seasonStatus === STATE_UNTRACKED) {
-          UIManager.showToast(I18n.t("toastAutoTrackSeason", { seasonName }));
-        }
+        UIManager.showToast(I18n.t("toastAutoTrackSeason", { seasonName }));
       }
     }
 
     // Propagate to Series
     if (seriesId) {
       const seriesStatus = Store.getStatus("series", seriesId);
-      if (seriesStatus !== STATE_WATCHING) {
+      if (seriesStatus === STATE_UNTRACKED) {
         const extraFields = {};
         const seriesName = PathAnalyzer.formatSeriesName(seriesId) || "Unknown Series";
         extraFields.name = seriesName;
 
         await Store.setState("series", seriesId, STATE_WATCHING, extraFields);
-        if (seriesStatus === STATE_UNTRACKED) {
-          UIManager.showToast(I18n.t("toastAutoTrackSeries", { seriesName }));
-        }
+        UIManager.showToast(I18n.t("toastAutoTrackSeries", { seriesName }));
       }
     }
   };
@@ -741,6 +737,6 @@ const AppController = (() => {
 
   window.addEventListener("pagehide", teardown);
 
-  return { init, teardown };
+  return { init, teardown, __testables: { propagateWatchingState } };
 })();
 export default AppController;
