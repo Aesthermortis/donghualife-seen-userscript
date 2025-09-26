@@ -4,7 +4,13 @@ export default {
 
   // Make jsdom's URL stable to avoid hostname-origin flakiness in tests.
   testEnvironmentOptions: {
-    url: "https://example.test/",
+    url: "https://www.donghualife.com/",
+  },
+
+  setupFilesAfterEnv: ["<rootDir>/tests/setup/jest.setup.js"],
+
+  moduleNameMapper: {
+    "\.(css)$": "<rootDir>/tests/mocks/styleMock.js",
   },
 
   // Discover both *.test.* and *.spec.* in JS/MJS across the repo (src/ and tests/).
