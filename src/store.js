@@ -238,6 +238,29 @@ const Store = (() => {
     );
   }
 
+  function belongsToSeries(episode, seriesId) {
+    if (!seriesId) {
+      return false;
+    }
+    if (episode.series_id) {
+      return episode.series_id === seriesId;
+    }
+
+    const analysis = PathAnalyzer.analyze(episode.id);
+    if (!analysis.isValid || analysis.type !== PathAnalyzer.EntityType.EPISODE) {
+      return false;
+    }
+
+    return analysis.hierarchy.seriesId === seriesId;
+  }
+
+  function getEpisodesBySeriesAndState(seriesId, state = null) {
+    const store = caches.Episodes;
+    return Array.from(store.values()).filter(
+      (episode) => belongsToSeries(episode, seriesId) && (state ? episode.state === state : true),
+    );
+  }
+
   // Get all seasons for a specific series
   function getSeasonsForSeries(seriesId) {
     return Array.from(caches.Seasons.values())
@@ -388,6 +411,7 @@ const Store = (() => {
     getAll,
     getSeasonsBySeriesAndState,
     getEpisodesBySeasonAndState,
+    getEpisodesBySeriesAndState,
     getSeasonsForSeries,
     getEpisodesForSeason,
     getStatus,

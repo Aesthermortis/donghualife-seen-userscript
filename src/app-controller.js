@@ -370,17 +370,7 @@ const AppController = (() => {
       const hasTrackedSeasons = watchingSeasons.length > 0 || completedSeasons.length > 0;
 
       if (!hasTrackedSeasons) {
-        const hasRemainingEpisodes = Store.getByState("episode", "seen").some((episode) => {
-          if (episode.series_id) {
-            return episode.series_id === seriesId;
-          }
-          const episodeInfo = PathAnalyzer.analyze(episode.id);
-          return (
-            episodeInfo.isValid &&
-            episodeInfo.type === PathAnalyzer.EntityType.EPISODE &&
-            episodeInfo.hierarchy.seriesId === seriesId
-          );
-        });
+        const hasRemainingEpisodes = Store.getEpisodesBySeriesAndState(seriesId, "seen").length > 0;
 
         if (!hasRemainingEpisodes) {
           await Store.remove("series", seriesId);
