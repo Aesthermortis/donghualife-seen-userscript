@@ -291,26 +291,36 @@ const AppController = (() => {
     const { seasonId, seriesId } = pathInfo.hierarchy;
 
     // Propagate to Season
-    if (seasonId && Store.getStatus("season", seasonId) !== STATE_WATCHING) {
-      const extraFields = {};
-      if (seriesId) {
-        extraFields.series_id = seriesId;
-      }
-      const seasonName = PathAnalyzer.formatSeasonName(seasonId) || "Unknown Season";
-      extraFields.name = seasonName;
+    if (seasonId) {
+      const seasonStatus = Store.getStatus("season", seasonId);
+      if (seasonStatus !== STATE_WATCHING) {
+        const extraFields = {};
+        if (seriesId) {
+          extraFields.series_id = seriesId;
+        }
+        const seasonName = PathAnalyzer.formatSeasonName(seasonId) || "Unknown Season";
+        extraFields.name = seasonName;
 
-      await Store.setState("season", seasonId, STATE_WATCHING, extraFields);
-      UIManager.showToast(I18n.t("toastAutoTrackSeason", { seasonName }));
+        await Store.setState("season", seasonId, STATE_WATCHING, extraFields);
+        if (seasonStatus === STATE_UNTRACKED) {
+          UIManager.showToast(I18n.t("toastAutoTrackSeason", { seasonName }));
+        }
+      }
     }
 
     // Propagate to Series
-    if (seriesId && Store.getStatus("series", seriesId) !== STATE_WATCHING) {
-      const extraFields = {};
-      const seriesName = PathAnalyzer.formatSeriesName(seriesId) || "Unknown Series";
-      extraFields.name = seriesName;
+    if (seriesId) {
+      const seriesStatus = Store.getStatus("series", seriesId);
+      if (seriesStatus !== STATE_WATCHING) {
+        const extraFields = {};
+        const seriesName = PathAnalyzer.formatSeriesName(seriesId) || "Unknown Series";
+        extraFields.name = seriesName;
 
-      await Store.setState("series", seriesId, STATE_WATCHING, extraFields);
-      UIManager.showToast(I18n.t("toastAutoTrackSeries", { seriesName }));
+        await Store.setState("series", seriesId, STATE_WATCHING, extraFields);
+        if (seriesStatus === STATE_UNTRACKED) {
+          UIManager.showToast(I18n.t("toastAutoTrackSeries", { seriesName }));
+        }
+      }
     }
   };
 
@@ -389,7 +399,6 @@ const AppController = (() => {
       if (newSeen) {
         // First, save the episode state.
         await Store.setState("episode", id, "seen");
-        // Then, propagate the 'watching' state up the hierarchy.
         await propagateWatchingState(id);
       } else {
         await Store.remove("episode", id);
@@ -427,7 +436,6 @@ const AppController = (() => {
         }
         // UNTRACKED → WATCHING
         await Store.setState(type, id, STATE_WATCHING, extraFields);
-        // No propagation needed
       } else if (currentStatus === STATE_WATCHING) {
         // WATCHING → COMPLETED (and propagate)
         await Store.setState(type, id, STATE_COMPLETED);

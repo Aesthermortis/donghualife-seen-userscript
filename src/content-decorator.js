@@ -1,4 +1,4 @@
-import { Constants, STATE_WATCHING, STATE_COMPLETED } from "./constants.js";
+import { Constants, STATE_UNTRACKED, STATE_WATCHING, STATE_COMPLETED } from "./constants.js";
 import PathAnalyzer from "./path-analyzer.js";
 import Store from "./store.js";
 import Utils from "./utils.js";
@@ -325,6 +325,84 @@ const ContentDecorator = (() => {
     });
   };
 
+  async function ensureSeriesWatching(seriesId, { showToast = false } = {}) {
+    if (!seriesId) {
+      return;
+    }
+    const currentStatus = Store.getStatus("series", seriesId);
+    if (currentStatus === STATE_WATCHING) {
+      updateItemUI(seriesId, { type: "series" });
+      return;
+    }
+
+    const seriesName = PathAnalyzer.formatSeriesName(seriesId) || "Unknown Series";
+    await Store.setState("series", seriesId, STATE_WATCHING, { name: seriesName });
+    if (showToast && currentStatus === STATE_UNTRACKED) {
+      UIManager.showToast(I18n.t("toastAutoTrackSeries", { seriesName }));
+    }
+    updateItemUI(seriesId, { type: "series" });
+  }
+
+  async function ensureSeasonWatching(seasonId, { showToast = false } = {}) {
+    if (!seasonId) {
+      return;
+    }
+    const currentStatus = Store.getStatus("season", seasonId);
+    if (currentStatus === STATE_WATCHING) {
+      updateItemUI(seasonId, { type: "season" });
+      return;
+    }
+
+    const info = PathAnalyzer.analyze(seasonId);
+    const payload = {};
+    const seasonName = PathAnalyzer.formatSeasonName(seasonId) || "Unknown Season";
+    payload.name = seasonName;
+    const seriesId = info.isValid ? info.hierarchy?.seriesId || null : null;
+    if (seriesId) {
+      payload.series_id = seriesId;
+    }
+
+    await Store.setState("season", seasonId, STATE_WATCHING, payload);
+    if (showToast && currentStatus === STATE_UNTRACKED) {
+      UIManager.showToast(I18n.t("toastAutoTrackSeason", { seasonName }));
+    }
+    updateItemUI(seasonId, { type: "season" });
+    if (seriesId) {
+      await ensureSeriesWatching(seriesId, { showToast });
+    }
+  }
+
+  async function maybeCleanupSeason(seasonId) {
+    if (!seasonId) {
+      return;
+    }
+    const remaining = Store.getEpisodesBySeasonAndState(seasonId, "seen");
+    const currentStatus = Store.getStatus("season", seasonId);
+    if (remaining.length === 0 && currentStatus === STATE_WATCHING) {
+      await Store.remove("season", seasonId);
+    }
+    updateItemUI(seasonId, { type: "season" });
+  }
+
+  async function maybeCleanupSeries(seriesId) {
+    if (!seriesId) {
+      return;
+    }
+    const currentStatus = Store.getStatus("series", seriesId);
+    if (currentStatus !== STATE_UNTRACKED) {
+      const watchingSeasons = Store.getSeasonsBySeriesAndState(seriesId, STATE_WATCHING);
+      const completedSeasons = Store.getSeasonsBySeriesAndState(seriesId, STATE_COMPLETED);
+      const hasTrackedSeasons = watchingSeasons.length > 0 || completedSeasons.length > 0;
+      if (!hasTrackedSeasons) {
+        const hasEpisodes = Store.getEpisodesBySeriesAndState(seriesId, "seen").length > 0;
+        if (!hasEpisodes) {
+          await Store.remove("series", seriesId);
+        }
+      }
+    }
+    updateItemUI(seriesId, { type: "series" });
+  }
+
   /**
    * Refreshes UI for the given id.
    */
@@ -347,14 +425,42 @@ const ContentDecorator = (() => {
       return;
     }
 
+    const seasonIds = new Set();
+    const seriesIds = new Set();
+    for (const episodeId of targets) {
+      const info = PathAnalyzer.analyze(episodeId);
+      if (!info.isValid || info.type !== PathAnalyzer.EntityType.EPISODE) {
+        continue;
+      }
+      const { seasonId, seriesId } = info.hierarchy;
+      if (seasonId) {
+        seasonIds.add(seasonId);
+      }
+      if (seriesId) {
+        seriesIds.add(seriesId);
+      }
+    }
+
     if (mark) {
       await Promise.all(targets.map((id) => Store.setState("episode", id, "seen")));
+      for (const seasonId of seasonIds) {
+        await ensureSeasonWatching(seasonId);
+      }
+      for (const seriesId of seriesIds) {
+        await ensureSeriesWatching(seriesId);
+      }
     } else {
       const removeFn =
         typeof Store.remove === "function"
           ? (episodeId) => Store.remove("episode", episodeId)
           : (episodeId) => Store.setState("episode", episodeId, "untracked");
       await Promise.all(targets.map((id) => removeFn(id)));
+      for (const seasonId of seasonIds) {
+        await maybeCleanupSeason(seasonId);
+      }
+      for (const seriesId of seriesIds) {
+        await maybeCleanupSeries(seriesId);
+      }
     }
 
     for (const id of targets) {
