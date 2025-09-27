@@ -12,6 +12,7 @@ const storeModuleMock = {
   default: {
     getStatus: jest.fn(() => "untracked"),
     setState: jest.fn(() => Promise.resolve()),
+    clearState: jest.fn(() => Promise.resolve()),
     remove: jest.fn(() => Promise.resolve()),
     getEpisodesBySeasonAndState: jest.fn(() => []),
     getSeasonsBySeriesAndState: jest.fn(() => []),

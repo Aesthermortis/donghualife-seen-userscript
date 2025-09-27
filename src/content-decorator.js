@@ -450,11 +450,7 @@ const ContentDecorator = (() => {
         await ensureSeriesWatching(seriesId);
       }
     } else {
-      const removeFn =
-        typeof Store.remove === "function"
-          ? (episodeId) => Store.remove("episode", episodeId)
-          : (episodeId) => Store.setState("episode", episodeId, "untracked");
-      await Promise.all(targets.map((id) => removeFn(id)));
+      await Promise.all(targets.map((id) => Store.clearState("episode", id)));
       for (const seasonId of seasonIds) {
         await maybeCleanupSeason(seasonId);
       }

@@ -99,7 +99,8 @@ const Settings = (() => {
     try {
       const exportObj = {};
       for (const type of SUPPORTED_TYPES) {
-        exportObj[type] = await Store.getAll(type);
+        const all = await Store.getAll(type);
+        exportObj[type] = all.filter((entry) => typeof entry.state === "string");
       }
       const jsonData = JSON.stringify(exportObj, null, 2);
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
