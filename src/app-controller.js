@@ -380,7 +380,7 @@ const AppController = (() => {
 
   // Retrieve cached episodes for a season and gracefully fall back to the DOM.
   const getEpisodesForSeasonWithFallback = async (seasonId) => {
-    let episodes = await Store.getEpisodesForSeason(seasonId);
+    let episodes = Store.getEpisodesForSeason(seasonId);
     if (episodes.length === 0) {
       episodes = discoverEpisodesFromDOM(seasonId);
     }
@@ -480,7 +480,7 @@ const AppController = (() => {
 
         if (type === "series") {
           // Mark all seasons and episodes as COMPLETED/SEEN
-          const childSeasons = await Store.getSeasonsForSeries(id);
+          const childSeasons = Store.getSeasonsForSeries(id);
           for (const seasonId of childSeasons) {
             await Store.setState("season", seasonId, STATE_COMPLETED);
             ContentDecorator.updateItemUI(seasonId, { type: "season" });
@@ -504,7 +504,7 @@ const AppController = (() => {
         await Store.remove(type, id);
 
         if (type === "series") {
-          const childSeasons = await Store.getSeasonsForSeries(id);
+          const childSeasons = Store.getSeasonsForSeries(id);
           for (const seasonId of childSeasons) {
             await Store.remove("season", seasonId);
             ContentDecorator.updateItemUI(seasonId, { type: "season" });
