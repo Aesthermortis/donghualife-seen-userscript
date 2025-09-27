@@ -471,10 +471,31 @@ const ContentDecorator = (() => {
     UIManager.showToast(I18n.t(successKey, { count: targets.length }));
   }
 
-  const computeId = (element) => {
-    const elementType = element.getAttribute(Constants.ITEM_DECORATED_ATTR);
+  /**
+   * Compute a stable identifier for a decorated element.
+   * If `selector` is provided, require a matching link or return null.
+   * `preferKind` overrides the inferred decorated type.
+   * @param {Element} element
+   * @param {string|null} selector
+   * @param {string|null} preferKind
+   * @returns {string|null}
+   */
+  const computeId = (element, selector = null, preferKind = null) => {
+    if (!element) {
+      return null;
+    }
+    const elementType = preferKind || element.getAttribute(Constants.ITEM_DECORATED_ATTR);
     if (!elementType) {
       return null;
+    }
+    if (selector) {
+      const link = element.querySelector(selector);
+      if (!link) {
+        const fallbackLink = element.querySelector(Constants.LINK_SELECTOR);
+        if (!fallbackLink) {
+          return null;
+        }
+      }
     }
     return ensureItemIdentifiers(element, elementType);
   };
