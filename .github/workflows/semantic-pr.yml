@@ -31,6 +31,18 @@ jobs:
             revert
             style
             test
-          scopes: |
-            deps
-            github-actions
+          # The subject of the PR must follow the conventional commit specification.
+          # This regex enforces the following rules:
+          # 1. The type is one of the allowed types.
+          # 2. The scope (optional) is a kebab-case string between 1 and 25 characters.
+          # 3. The subject description is required and starts with a lowercase letter.
+          subjectPattern: '^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9][a-z0-9-]{0,24}\))?: [a-z].+$'
+          # Optional: Show a more descriptive error message in case of a mismatch.
+          subjectPatternError: |
+            The pull request title does not follow the Conventional Commits specification.
+            Format: `type(scope): subject`
+            - `type`: build, chore, ci, docs, feat, fix, perf, refactor, revert, style, test
+            - `scope` (optional): kebab-case (e.g., `my-feature`)
+            - `subject`: must start with a lowercase letter and not be empty.
+          # The scope is optional.
+          requireScope: false
