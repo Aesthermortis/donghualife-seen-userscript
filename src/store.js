@@ -180,6 +180,37 @@ const Store = (() => {
     );
   }
 
+  async function clearState(entityType, id) {
+    const store = TYPE_TO_STORE[entityType];
+    return enqueueById(id, () =>
+      withEntityLock(entityType, id, () =>
+        withErrorHandling(
+          async () => {
+            const existing = await DatabaseManager.get(store, id);
+            if (!existing) {
+              return null;
+            }
+            const obj = { ...existing };
+            delete obj.state;
+            delete obj.t;
+            await DatabaseManager.set(store, id, obj);
+            caches[store].set(id, obj);
+            notify &&
+              notify({
+                type: entityType.toUpperCase() + "_CHANGE",
+                payload: { id, state: STATE_UNTRACKED },
+              });
+            return obj;
+          },
+          {
+            errorMessageKey: "toastErrorSaving",
+            logContext: `Error clearing state for store=${store}, id=${id}`,
+          },
+        ),
+      ),
+    );
+  }
+
   // Universal: removes an entity
   async function remove(entityType, id) {
     const store = TYPE_TO_STORE[entityType];
@@ -278,7 +309,7 @@ const Store = (() => {
   // Universal: get status of an entity (returns STATE_UNTRACKED if not found)
   function getStatus(entityType, id) {
     const obj = get(entityType, id);
-    return obj ? obj.state : STATE_UNTRACKED;
+    return obj && typeof obj.state === "string" ? obj.state : STATE_UNTRACKED;
   }
 
   // Get user preferences
@@ -398,13 +429,18 @@ const Store = (() => {
       return;
     }
 
-    await remove(pathInfo.type, id);
+    if (pathInfo.type === PathAnalyzer.EntityType.EPISODE) {
+      await clearState(pathInfo.type, id);
+    } else {
+      await remove(pathInfo.type, id);
+    }
   }
 
   // Expose API
   return {
     load,
     setState,
+    clearState,
     remove,
     get,
     getByState,

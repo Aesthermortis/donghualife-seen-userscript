@@ -345,6 +345,48 @@ const AppController = (() => {
     localStorage.removeItem(Constants.SYNC_CHANNEL_NAME);
   };
 
+  // Fallback when IndexedDB lacks episode records but DOM still has them.
+  const discoverEpisodesFromDOM = (filterSeasonId = null, filterSeriesId = null) => {
+    const selector = `[${Constants.ITEM_DECORATED_ATTR}="episode"]`;
+    const nodes = document.querySelectorAll(selector);
+    const ids = [];
+    const seenIds = new Set();
+
+    for (const element of nodes) {
+      if (!Utils.isElementVisible(element)) {
+        continue;
+      }
+      const id = ContentDecorator.computeId(element, Constants.LINK_SELECTOR, "episode");
+      if (!id || seenIds.has(id)) {
+        continue;
+      }
+      const info = PathAnalyzer.analyze(id);
+      if (!info.isValid || info.type !== PathAnalyzer.EntityType.EPISODE) {
+        continue;
+      }
+      const { seasonId, seriesId } = info.hierarchy;
+      if (filterSeasonId && seasonId !== filterSeasonId) {
+        continue;
+      }
+      if (filterSeriesId && seriesId !== filterSeriesId) {
+        continue;
+      }
+      seenIds.add(id);
+      ids.push(id);
+    }
+
+    return ids;
+  };
+
+  // Retrieve cached episodes for a season and gracefully fall back to the DOM.
+  const getEpisodesForSeasonWithFallback = async (seasonId) => {
+    let episodes = Store.getEpisodesForSeason(seasonId);
+    if (episodes.length === 0) {
+      episodes = discoverEpisodesFromDOM(seasonId);
+    }
+    return episodes;
+  };
+
   /**
    * Reverts the propagated "watching" state when the source episode is unmarked.
    * Ensures that seasons/series remain tracked only if they still have activity.
@@ -397,7 +439,7 @@ const AppController = (() => {
         await Store.setState("episode", id, "seen");
         await propagateWatchingState(id);
       } else {
-        await Store.remove("episode", id);
+        await Store.clearState("episode", id);
         await revertWatchingState(id);
       }
 
@@ -443,7 +485,7 @@ const AppController = (() => {
             await Store.setState("season", seasonId, STATE_COMPLETED);
             ContentDecorator.updateItemUI(seasonId, { type: "season" });
 
-            const episodes = Store.getEpisodesForSeason(seasonId);
+            let episodes = await getEpisodesForSeasonWithFallback(seasonId);
             for (const episodeId of episodes) {
               await Store.setState("episode", episodeId, "seen");
               ContentDecorator.updateItemUI(episodeId, { type: "episode" });
@@ -451,7 +493,7 @@ const AppController = (() => {
           }
         } else if (type === "season") {
           // Mark all episodes of the season as SEEN
-          const episodes = Store.getEpisodesForSeason(id);
+          let episodes = await getEpisodesForSeasonWithFallback(id);
           for (const episodeId of episodes) {
             await Store.setState("episode", episodeId, "seen");
             ContentDecorator.updateItemUI(episodeId, { type: "episode" });
@@ -467,16 +509,16 @@ const AppController = (() => {
             await Store.remove("season", seasonId);
             ContentDecorator.updateItemUI(seasonId, { type: "season" });
 
-            const episodes = Store.getEpisodesForSeason(seasonId);
+            let episodes = await getEpisodesForSeasonWithFallback(seasonId);
             for (const episodeId of episodes) {
-              await Store.remove("episode", episodeId);
+              await Store.clearState("episode", episodeId);
               ContentDecorator.updateItemUI(episodeId, { type: "episode" });
             }
           }
         } else if (type === "season") {
-          const episodes = Store.getEpisodesForSeason(id);
+          let episodes = await getEpisodesForSeasonWithFallback(id);
           for (const episodeId of episodes) {
-            await Store.remove("episode", episodeId);
+            await Store.clearState("episode", episodeId);
             ContentDecorator.updateItemUI(episodeId, { type: "episode" });
           }
         }
