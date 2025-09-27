@@ -1,3 +1,10 @@
+## [3.6.2](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.6.1...v3.6.2) (2025-09-27)
+
+### Bug Fixes
+
+- **content-decorator:** align computeId signature with its usage ([89e7882](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/89e7882b91d779a615c88769c6443b1edde2e4f0))
+- **core:** prevent losing episode refs on unmark ([6e73886](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/6e73886cd736f40e551c9c2334b2fbe497e4be27))
+
 ## [3.6.1](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.6.0...v3.6.1) (2025-09-26)
 
 ### Bug Fixes
