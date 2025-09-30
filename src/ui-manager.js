@@ -31,7 +31,7 @@ const UIManager = (() => {
   };
 
   const defaultSanitize = (html) => {
-    const value = html == null ? "" : String(html);
+    const value = html === null ? "" : String(html);
     const purifier = typeof globalThis !== "undefined" ? globalThis.DOMPurify : undefined;
     if (purifier && typeof purifier.sanitize === "function") {
       return purifier.sanitize(value, {
@@ -226,7 +226,7 @@ const UIManager = (() => {
       } else {
         modal.textContent = content;
       }
-    } else if (content != null) {
+    } else if (content !== null) {
       modal.textContent = String(content);
     }
 

@@ -39,7 +39,7 @@ const Settings = (() => {
 
     for (const type of SUPPORTED_TYPES) {
       const entries = parsed[type];
-      if (entries == null) {
+      if (entries === null) {
         continue;
       }
       if (!Array.isArray(entries)) {

@@ -15,7 +15,7 @@ import withErrorHandling from "./error-handler.js";
  */
 const AppController = (() => {
   let syncChannel = null;
-  let cleanupTasks = new Set();
+  const cleanupTasks = new Set();
   const registerCleanup = (fn) => {
     if (typeof fn !== "function") {
       return () => {};
@@ -485,7 +485,7 @@ const AppController = (() => {
             await Store.setState("season", seasonId, STATE_COMPLETED);
             ContentDecorator.updateItemUI(seasonId, { type: "season" });
 
-            let episodes = await getEpisodesForSeasonWithFallback(seasonId);
+            const episodes = await getEpisodesForSeasonWithFallback(seasonId);
             for (const episodeId of episodes) {
               await Store.setState("episode", episodeId, "seen");
               ContentDecorator.updateItemUI(episodeId, { type: "episode" });
@@ -493,7 +493,7 @@ const AppController = (() => {
           }
         } else if (type === "season") {
           // Mark all episodes of the season as SEEN
-          let episodes = await getEpisodesForSeasonWithFallback(id);
+          const episodes = await getEpisodesForSeasonWithFallback(id);
           for (const episodeId of episodes) {
             await Store.setState("episode", episodeId, "seen");
             ContentDecorator.updateItemUI(episodeId, { type: "episode" });
@@ -509,14 +509,14 @@ const AppController = (() => {
             await Store.remove("season", seasonId);
             ContentDecorator.updateItemUI(seasonId, { type: "season" });
 
-            let episodes = await getEpisodesForSeasonWithFallback(seasonId);
+            const episodes = await getEpisodesForSeasonWithFallback(seasonId);
             for (const episodeId of episodes) {
               await Store.clearState("episode", episodeId);
               ContentDecorator.updateItemUI(episodeId, { type: "episode" });
             }
           }
         } else if (type === "season") {
-          let episodes = await getEpisodesForSeasonWithFallback(id);
+          const episodes = await getEpisodesForSeasonWithFallback(id);
           for (const episodeId of episodes) {
             await Store.clearState("episode", episodeId);
             ContentDecorator.updateItemUI(episodeId, { type: "episode" });
