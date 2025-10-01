@@ -119,6 +119,14 @@ const AppController = (() => {
 
   /**
    * Decorates eligible items using a single DOM traversal and idle batching.
+   *
+   * Traverses the DOM starting from the given root (defaults to document),
+   * finds all episode, season, series, and movie elements matching selectors,
+   * and decorates them using ContentDecorator. Batching is performed using
+   * requestIdleCallback or requestAnimationFrame for performance.
+   *
+   * @param {Element|Document} [root=document] - The root node to start traversal from.
+   * @returns {void}
    */
   const applyAll = (root = document) => {
     const rootIsElement = root instanceof Element;
@@ -322,9 +330,15 @@ const AppController = (() => {
 
   /**
    * Synchronizes seen state across tabs using BroadcastChannel or localStorage fallback.
-   * Episodes and movies are the only entities that emit sync updates.
-   * @param {string} type
-   * @param {string} id
+   * Only episodes and movies emit sync updates.
+   *
+   * @function emitSyncUpdate
+   * @param {string} type - The entity type ("episode" or "movie").
+   * @param {string} id - The unique identifier of the entity.
+   * @description
+   * Emits a synchronization message containing the seen state for the given entity.
+   * Uses BroadcastChannel if available, otherwise falls back to localStorage events.
+   * The payload includes the entity ID, seen status, and timestamp.
    */
   const emitSyncUpdate = (type, id) => {
     if (!id || (type !== "episode" && type !== "movie")) {
@@ -429,6 +443,18 @@ const AppController = (() => {
 
   /**
    * Handles item state changes and propagates them across hierarchy.
+   *
+   * This function manages toggling the "seen" state for episodes and movies,
+   * as well as tracking and completion states for series and seasons.
+   * It propagates state changes up and down the hierarchy, updates the UI,
+   * and synchronizes state across tabs. For episodes and movies, it emits
+   * cross-tab sync events. For series and seasons, it propagates completion
+   * or removal to child entities.
+   *
+   * @param {string} type - The entity type ("episode", "series", "season", "movie").
+   * @param {string} id - The unique identifier for the entity.
+   * @param {string} currentStatus - The current tracking status of the entity.
+   * @returns {Promise<void>}
    */
   const handleToggle = async (type, id, currentStatus) => {
     // Episodes

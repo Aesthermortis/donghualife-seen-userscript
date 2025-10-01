@@ -1,9 +1,25 @@
 import { execSync } from "node:child_process";
 
+/**
+ * Returns the major version number from a version string.
+ *
+ * @param {string|number} v - The version string or number (e.g., "24.1.0" or 24).
+ * @returns {number} The major version as an integer.
+ */
 function major(v) {
   return parseInt(String(v).split(".")[0], 10);
 }
 
+/**
+ * Retrieves the current npm version as a string.
+ *
+ * Attempts to determine the npm version using the following strategies:
+ * 1. Parses the npm user agent string from environment variables.
+ * 2. Executes npm via the npm_execpath environment variable.
+ * 3. Executes the npm command directly from the system PATH.
+ *
+ * @returns {string} The detected npm version (e.g., "11.0.0").
+ */
 function getNpmVersion() {
   // try to get it from npm_config_user_agent if available
   const ua = process.env.npm_config_user_agent || "";

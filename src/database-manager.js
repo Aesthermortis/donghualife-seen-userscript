@@ -65,6 +65,13 @@ const DatabaseManager = (() => {
     }, RELOAD_DELAY_MS);
   };
 
+  /**
+   * Opens a connection to the IndexedDB database.
+   * Handles database upgrades, blocked events, and version changes.
+   * Ensures all required object stores are created.
+   *
+   * @returns {Promise<IDBDatabase>} Resolves with the database instance.
+   */
   function openDB() {
     return new Promise((resolve, reject) => {
       if (dbInstance) {
@@ -110,6 +117,15 @@ const DatabaseManager = (() => {
     });
   }
 
+  /**
+   * Executes a database operation on the specified object store.
+   * Opens a transaction with the given mode and applies the provided function.
+   *
+   * @param {string} store - The name of the object store.
+   * @param {"readonly"|"readwrite"} mode - The transaction mode.
+   * @param {(store: IDBObjectStore) => IDBRequest} fn - Function that receives the object store and returns an IDBRequest.
+   * @returns {Promise<any>} Resolves with the result of the request.
+   */
   function perform(store, mode, fn) {
     return openDB().then(
       (db) =>

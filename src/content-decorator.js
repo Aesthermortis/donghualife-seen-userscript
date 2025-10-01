@@ -117,6 +117,14 @@ const ContentDecorator = (() => {
     return ids;
   };
 
+  /**
+   * Ensures that bulk action controls (mark/unmark all visible episodes)
+   * are present in the episode card header. Adds accessible buttons for
+   * bulk marking and unmarking, and wires up click handlers to perform
+   * the corresponding bulk actions.
+   *
+   * @param {Element} item - The episode element for which to ensure bulk controls.
+   */
   function ensureBulkControls(item) {
     if (!item || item.getAttribute(Constants.ITEM_DECORATED_ATTR) !== "episode") {
       return;
@@ -165,7 +173,12 @@ const ContentDecorator = (() => {
   }
 
   /**
-   * Updates the button text, ARIA, and state based on type and logical status.
+   * Updates the visual state and ARIA attributes of a toggle button
+   * based on the item type and current status.
+   *
+   * @param {HTMLButtonElement} btn - The button element to update.
+   * @param {string} type - The type of item ("episode", "movie", "series", "season").
+   * @param {string} status - The current status ("seen", STATE_WATCHING, STATE_COMPLETED, etc.).
    */
   const updateButtonState = (btn, type, status) => {
     let textKey;
@@ -207,7 +220,14 @@ const ContentDecorator = (() => {
   };
 
   /**
-   * Creates and returns a state button for the given type and status.
+   * Creates a toggle button for marking an item as seen/watching/completed.
+   * The button is styled and configured according to the item type and status.
+   * Used for both card and table row contexts.
+   *
+   * @param {string} type - The type of item ("episode", "movie", "series", "season").
+   * @param {string} status - The current status of the item.
+   * @param {boolean} isCard - Whether the button is for a card (true) or a table row (false).
+   * @returns {HTMLButtonElement} The configured button element.
    */
   const makeButton = (type, status, isCard) => {
     const b = document.createElement("button");
@@ -222,7 +242,10 @@ const ContentDecorator = (() => {
   };
 
   /**
-   * Adds control column to a table if not present.
+   * Prepares a table for episode controls by adding a control cell to the header row.
+   * Ensures the table is only marked up once per session.
+   *
+   * @param {HTMLTableElement} table - The table element to prepare.
    */
   const prepareTable = (table) => {
     if (!table || table.hasAttribute(Constants.TABLE_MARK_ATTR)) {
@@ -239,7 +262,11 @@ const ContentDecorator = (() => {
   };
 
   /**
-   * Returns the td container to insert the button in a table row.
+   * Creates and appends a table cell (<td>) to the given row for episode control buttons.
+   * The cell is assigned the appropriate class and attribute for identification.
+   *
+   * @param {HTMLTableRowElement} row - The table row to which the control cell will be appended.
+   * @returns {HTMLTableCellElement} The newly created control cell element.
    */
   const getButtonContainerForRow = (row) => {
     const c = document.createElement("td");
@@ -250,7 +277,13 @@ const ContentDecorator = (() => {
   };
 
   /**
-   * Applies or removes visual classes for state.
+   * Updates the visual state and CSS classes of a content item based on its type and status.
+   * For episodes and movies, toggles the "seen" class. For series and seasons, toggles
+   * "watching" and "completed" classes. Also updates the corresponding toggle button state.
+   *
+   * @param {Element} item - The DOM element representing the content item.
+   * @param {string} type - The type of the item ("episode", "movie", "series", "season").
+   * @param {string} status - The current status of the item ("seen", STATE_WATCHING, STATE_COMPLETED, etc.).
    */
   const updateItem = (item, type, status) => {
     if (type === "episode" || type === "movie") {
@@ -271,7 +304,15 @@ const ContentDecorator = (() => {
   };
 
   /**
-   * Decorates the item (row or card) with the button and state.
+   * Decorates a content item (episode, movie, series, or season) with a toggle button
+   * for marking its state (seen, watching, completed). Ensures the item is only decorated once,
+   * sets up bulk controls for episodes, and wires up the toggle handler.
+   *
+   * @param {Element} item - The DOM element representing the content item.
+   * @param {Object} options - Options for decoration.
+   * @param {string} options.type - The type of item ("episode", "movie", "series", "season").
+   * @param {Function} options.onToggle - Callback invoked when the toggle button is clicked.
+   * @param {string|null} [options.preferKind=null] - Optional override for the decorated kind.
    */
   const decorateItem = (item, { type, onToggle, preferKind = null }) => {
     if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === type) {
@@ -325,6 +366,18 @@ const ContentDecorator = (() => {
     });
   };
 
+  /**
+   * Ensures that the given series is marked as "watching" in the persistent store.
+   * If the series is not already tracked as "watching", updates its state and optionally shows a toast notification.
+   * Also refreshes the UI for the series.
+   *
+   * @async
+   * @function ensureSeriesWatching
+   * @param {string} seriesId - The unique identifier for the series.
+   * @param {Object} [options={}] - Optional configuration object.
+   * @param {boolean} [options.showToast=false] - Whether to show a toast notification when auto-tracking.
+   * @returns {Promise<void>}
+   */
   async function ensureSeriesWatching(seriesId, { showToast = false } = {}) {
     if (!seriesId) {
       return;
@@ -343,6 +396,18 @@ const ContentDecorator = (() => {
     updateItemUI(seriesId, { type: "series" });
   }
 
+  /**
+   * Ensures that the given season is marked as "watching" in the persistent store.
+   * If the season is not already tracked as "watching", updates its state and optionally shows a toast notification.
+   * Also refreshes the UI for the season and ensures the parent series is tracked as "watching".
+   *
+   * @async
+   * @function ensureSeasonWatching
+   * @param {string} seasonId - The unique identifier for the season.
+   * @param {Object} [options={}] - Optional configuration object.
+   * @param {boolean} [options.showToast=false] - Whether to show a toast notification when auto-tracking.
+   * @returns {Promise<void>}
+   */
   async function ensureSeasonWatching(seasonId, { showToast = false } = {}) {
     if (!seasonId) {
       return;
@@ -372,6 +437,16 @@ const ContentDecorator = (() => {
     }
   }
 
+  /**
+   * Cleans up the season tracking state if all episodes are unmarked ("seen" state is empty).
+   * If no episodes remain marked as "seen" and the season is currently tracked as "watching",
+   * removes the season from the persistent store and updates the UI.
+   *
+   * @async
+   * @function maybeCleanupSeason
+   * @param {string} seasonId - The unique identifier for the season.
+   * @returns {Promise<void>}
+   */
   async function maybeCleanupSeason(seasonId) {
     if (!seasonId) {
       return;
@@ -384,6 +459,16 @@ const ContentDecorator = (() => {
     updateItemUI(seasonId, { type: "season" });
   }
 
+  /**
+   * Cleans up the series tracking state if no seasons or episodes are marked as tracked.
+   * If the series has no tracked seasons (watching or completed) and no episodes marked as "seen",
+   * removes the series from the persistent store and updates the UI.
+   *
+   * @async
+   * @function maybeCleanupSeries
+   * @param {string} seriesId - The unique identifier for the series.
+   * @returns {Promise<void>}
+   */
   async function maybeCleanupSeries(seriesId) {
     if (!seriesId) {
       return;
@@ -404,7 +489,17 @@ const ContentDecorator = (() => {
   }
 
   /**
-   * Refreshes UI for the given id.
+   * Handles bulk marking or unmarking of all visible episodes within a card.
+   * Collects all visible episode IDs, determines which should be marked or unmarked,
+   * updates their state in the persistent store, updates related season and series tracking,
+   * refreshes the UI for affected items, and displays a toast notification summarizing the action.
+   *
+   * @async
+   * @function handleBulkToggle
+   * @param {Element} card - The card element containing episode items.
+   * @param {Object} options - Bulk action options.
+   * @param {boolean} options.mark - If true, mark all visible episodes as "seen"; if false, unmark them.
+   * @returns {Promise<void>}
    */
   async function handleBulkToggle(card, { mark }) {
     const ids = collectVisibleEpisodeIds(card);
@@ -468,13 +563,15 @@ const ContentDecorator = (() => {
   }
 
   /**
-   * Compute a stable identifier for a decorated element.
-   * If `selector` is provided, require a matching link or return null.
-   * `preferKind` overrides the inferred decorated type.
-   * @param {Element} element
-   * @param {string|null} selector
-   * @param {string|null} preferKind
-   * @returns {string|null}
+   * Computes a stable identifier for a decorated element.
+   * If a `selector` is provided, requires a matching link or returns null.
+   * The `preferKind` parameter overrides the inferred decorated type.
+   *
+   * @function computeId
+   * @param {Element} element - The DOM element to compute the ID for.
+   * @param {string|null} selector - Optional CSS selector for the primary link.
+   * @param {string|null} preferKind - Optional override for the decorated kind/type.
+   * @returns {string|null} The computed stable identifier, or null if not found.
    */
   const computeId = (element, selector = null, preferKind = null) => {
     if (!element) {

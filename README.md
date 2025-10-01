@@ -1,6 +1,6 @@
 # DonghuaLife Seen Userscript
 
-Mark episodes as **seen** on [donghualife](https://donghualife.com) with a simple and persistent toggle.  
+Mark episodes as **seen** on [donghualife](https://donghualife.com) with a simple and persistent toggle.
 Designed for a smooth experience, compatible across browsers and userscript managers.
 
 ## 🚀 Features
@@ -20,19 +20,19 @@ Install a userscript manager:
 - [Violentmonkey](https://violentmonkey.github.io/)
 - [Greasemonkey](https://www.greasespot.net/)
 
-[Click here to install the script](https://github.com/Aesthermortis/donghualife-seen-userscript/raw/main/donghualife-seen.user.js)  
- _(opens directly in your userscript manager)_
+[Click here to install the script](https://github.com/Aesthermortis/donghualife-seen-userscript/raw/main/donghualife-seen.user.js)
+_(opens directly in your userscript manager)_
 
 ## 📸 Preview
 
-> _(Add screenshot or gif here)_  
+> _(Add screenshot or gif here)_
 > For now, the script adds a floating settings button and a “Mark as Seen” toggle to each episode.
 
 ## 🛠 Development
 
 Clone the repo and edit the script:
 
-```
+```bash
 git clone https://github.com/Aesthermortis/donghualife-seen-userscript.git
 cd donghualife-seen-userscript
 ```

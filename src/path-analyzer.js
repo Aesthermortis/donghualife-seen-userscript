@@ -101,7 +101,13 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Extract pathname from various input types
+   * Extract pathname from various input types.
+   *
+   * Accepts a string (URL or pathname), a URL object, or an HTMLAnchorElement.
+   * Returns the pathname portion of the input, or null if not extractable.
+   *
+   * @param {string|URL|HTMLAnchorElement} input - The input to extract the pathname from.
+   * @returns {string|null} The extracted pathname, or null if extraction fails.
    */
   function extractPathname(input) {
     if (!input) {
@@ -142,14 +148,26 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Check if path is excluded
+   * Determines whether the given pathname matches any of the excluded path patterns.
+   *
+   * Excluded paths are typically user, search, category, admin, or API routes
+   * that should not be processed by the DonghuaLife UserScript.
+   *
+   * @param {string} pathname - The pathname to check against exclusion patterns.
+   * @returns {boolean} True if the pathname is excluded, false otherwise.
    */
   function isExcluded(pathname) {
     return excludedPaths.some((pattern) => pattern.test(pathname));
   }
 
   /**
-   * Identify entity type from pathname
+   * Identify the entity type and format from a given pathname.
+   *
+   * Iterates through all configured path patterns for episodes, movies, series, and seasons.
+   * Returns an object containing the detected entity type and format, or UNKNOWN if no match.
+   *
+   * @param {string} pathname - The pathname to analyze.
+   * @returns {{type: string, format: string|null}} Object with entity type and format.
    */
   function identifyEntity(pathname) {
     for (const [type, patterns] of Object.entries(pathPatterns)) {
@@ -163,7 +181,15 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Extract episode-specific information
+   * Extract episode-specific information from a pathname.
+   *
+   * Parses the pathname according to the detected format and returns
+   * an object containing the episode number, series slug, season number,
+   * and episode slug if available.
+   *
+   * @param {string} pathname - The pathname to extract episode info from.
+   * @param {string} format - The format type detected for the episode path.
+   * @returns {Object} An object with episodeNumber, seriesSlug, seasonNumber, and episodeSlug.
    */
   function extractEpisodeInfo(pathname, format) {
     const info = {
@@ -193,7 +219,14 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Extract season-specific information
+   * Extract season-specific information from a pathname.
+   *
+   * Parses the pathname according to the detected format and returns
+   * an object containing the series slug and season number if available.
+   *
+   * @param {string} pathname - The pathname to extract season info from.
+   * @param {string} format - The format type detected for the season path.
+   * @returns {Object} An object with seriesSlug and seasonNumber.
    */
   function extractSeasonInfo(pathname, format) {
     const info = {
@@ -228,7 +261,12 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Extract series-specific information
+   * Extract series-specific information from a pathname.
+   *
+   * Parses the pathname to retrieve the series slug if present.
+   *
+   * @param {string} pathname - The pathname to extract series info from.
+   * @returns {Object} An object containing the seriesSlug if found, otherwise null.
    */
   function extractSeriesInfo(pathname) {
     const info = {
@@ -244,7 +282,14 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Extract movie-specific information
+   * Extract movie-specific information from a pathname.
+   *
+   * Parses the pathname according to the detected format and returns
+   * an object containing the movie slug and language.
+   *
+   * @param {string} pathname - The pathname to extract movie info from.
+   * @param {string} format - The format type detected for the movie path.
+   * @returns {Object} An object with movieSlug and language.
    */
   function extractMovieInfo(pathname, format) {
     const info = {
@@ -261,7 +306,13 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Build hierarchy information
+   * Build hierarchy information for the given entity.
+   *
+   * Constructs an object representing the hierarchical relationship of the entity,
+   * including seriesId, seasonId, episodeId, and movieId as applicable.
+   *
+   * @param {Object} entityInfo - The analyzed entity information object.
+   * @returns {Object} Hierarchy object containing parent and child IDs.
    */
   function buildHierarchy(entityInfo) {
     const hierarchy = {
@@ -300,7 +351,13 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Extract metadata (could be extended to extract from DOM if needed)
+   * Extract metadata for the given entity information.
+   *
+   * Returns an object containing the slug, title (if available), and extraction timestamp.
+   * Can be extended to extract additional metadata from the DOM if needed.
+   *
+   * @param {Object} entityInfo - The entity information object from analysis.
+   * @returns {Object} Metadata object with slug, title, and extractedAt timestamp.
    */
   function extractMetadata(entityInfo) {
     return {
@@ -311,7 +368,13 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Helper function to create error result
+   * Helper function to create an error result object for path analysis.
+   *
+   * Returns a standardized result object indicating an invalid path,
+   * with error details and empty hierarchy/metadata.
+   *
+   * @param {string} error - Error message describing the failure.
+   * @returns {Object} Error result object for path analysis.
    */
   function createErrorResult(error) {
     return {
@@ -326,7 +389,13 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Helper function to create excluded result
+   * Helper function to create excluded result.
+   *
+   * Returns a standardized result object indicating that the path is excluded from analysis,
+   * with error details, exclusion flag, and empty hierarchy/metadata.
+   *
+   * @param {string} pathname - The pathname that is excluded.
+   * @returns {Object} Excluded result object for path analysis.
    */
   function createExcludedResult(pathname) {
     return {
@@ -343,6 +412,13 @@ const PathAnalyzer = (() => {
 
   /**
    * Helper function to create unknown result
+   *
+   * Returns a standardized result object indicating that the entity type could not be determined
+   * for the given pathname. The result object contains the pathname, sets type to UNKNOWN,
+   * marks isValid as false, and provides an error message. Hierarchy and metadata are empty.
+   *
+   * @param {string} pathname - The pathname for which the entity type is unknown.
+   * @returns {Object} Unknown result object for path analysis.
    */
   function createUnknownResult(pathname) {
     return {
@@ -474,16 +550,26 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Convert slug to title case
+   * Convert a slug string to title case for display purposes.
+   *
+   * Replaces hyphens and underscores with spaces, then capitalizes the first letter of each word.
+   *
+   * @param {string} slug - The slug string to convert (e.g., "donghua-life").
+   * @returns {string} The converted title case string (e.g., "Donghua Life").
    */
   function slugToTitle(slug) {
     return slug.replace(/[-_]+/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
   }
 
   /**
-   * Format series name from ID or path
-   * @param {string} idOrPath
-   * @returns {string|null}
+   * Converts a series ID or path to a human-readable series name.
+   *
+   * Analyzes the provided ID or path, verifies it is a valid series type,
+   * and returns the formatted series name in title case. Returns null if
+   * the input is not a valid series path or ID.
+   *
+   * @param {string} idOrPath - The series ID or pathname to format.
+   * @returns {string|null} The formatted series name, or null if invalid.
    */
   function formatSeriesName(idOrPath) {
     const info = analyze(idOrPath);
@@ -494,9 +580,15 @@ const PathAnalyzer = (() => {
   }
 
   /**
-   * Format season name from ID or path
-   * @param {string} idOrPath
-   * @returns {string|null}
+   * Format a season name from a season path or ID.
+   *
+   * Analyzes the provided ID or path, verifies it is a valid season type,
+   * and returns the formatted season name in the format "Series Name - SeasonNumber"
+   * if both are available, or just the series name if the season number is missing.
+   * Returns null if the input is not a valid season path or ID.
+   *
+   * @param {string} idOrPath - The season ID or pathname to format.
+   * @returns {string|null} The formatted season name, or null if invalid.
    */
   function formatSeasonName(idOrPath) {
     const info = analyze(idOrPath);
