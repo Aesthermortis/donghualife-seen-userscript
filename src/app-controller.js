@@ -478,6 +478,11 @@ const AppController = (() => {
         // WATCHING → COMPLETED (and propagate)
         await Store.setState(type, id, STATE_COMPLETED);
 
+        /**
+         * Sync policy:
+         * - Do NOT emit per-episode updates inside propagation loops.
+         * - Only update local UI here; cross-tab sync must be batched elsewhere.
+         */
         if (type === "series") {
           // Mark all seasons and episodes as COMPLETED/SEEN
           const childSeasons = Store.getSeasonsForSeries(id);
@@ -779,6 +784,6 @@ const AppController = (() => {
 
   window.addEventListener("pagehide", teardown);
 
-  return { init, teardown, __testables: { propagateWatchingState } };
+  return { init, teardown, __testables: { propagateWatchingState, handleToggle } };
 })();
 export default AppController;

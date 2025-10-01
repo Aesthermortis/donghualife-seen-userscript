@@ -17,8 +17,8 @@ const storeModuleMock = {
     getEpisodesBySeasonAndState: jest.fn(() => []),
     getSeasonsBySeriesAndState: jest.fn(() => []),
     getEpisodesBySeriesAndState: jest.fn(() => []),
-    getSeasonsForSeries: jest.fn(() => Promise.resolve([])),
-    getEpisodesForSeason: jest.fn(() => Promise.resolve([])),
+    getSeasonsForSeries: jest.fn(() => []),
+    getEpisodesForSeason: jest.fn(() => []),
     get: jest.fn(() => ({})),
     subscribe: jest.fn(),
     load: jest.fn(() => Promise.resolve()),
@@ -95,7 +95,7 @@ await jest.unstable_mockModule("../../src/error-handler.js", () => errorHandlerM
 
 const { default: AppController } = await import("../../src/app-controller.js");
 
-const { propagateWatchingState } = AppController.__testables;
+const { propagateWatchingState, handleToggle } = AppController.__testables;
 
 const Store = storeModuleMock.default;
 const PathAnalyzer = pathAnalyzerModuleMock.default;
@@ -169,5 +169,47 @@ describe("propagateWatchingState", () => {
     expect(UIManager.showToast).toHaveBeenCalledTimes(2);
     expect(I18n.t).toHaveBeenCalledWith("toastAutoTrackSeason", { seasonName: "Season Two" });
     expect(I18n.t).toHaveBeenCalledWith("toastAutoTrackSeries", { seriesName: "Series Two" });
+  });
+});
+
+describe("handleToggle", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Store.getEpisodesForSeason.mockReturnValue([]);
+    Store.getSeasonsForSeries.mockReturnValue([]);
+    Object.defineProperty(global, "localStorage", {
+      value: {
+        setItem: jest.fn(),
+        removeItem: jest.fn(),
+      },
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    delete global.localStorage;
+  });
+
+  test("completing a season does not emit per-episode sync updates", async () => {
+    Store.getEpisodesForSeason.mockReturnValue(["episode-1", "episode-2"]);
+
+    await handleToggle("season", "season-123", STATE_WATCHING);
+
+    expect(Store.setState).toHaveBeenCalledWith("episode", "episode-1", "seen");
+    expect(Store.setState).toHaveBeenCalledWith("episode", "episode-2", "seen");
+    expect(global.localStorage.setItem).not.toHaveBeenCalled();
+    expect(global.localStorage.removeItem).not.toHaveBeenCalled();
+  });
+
+  test("completing a series does not emit per-episode sync updates", async () => {
+    Store.getSeasonsForSeries.mockReturnValue(["season-1"]);
+    Store.getEpisodesForSeason.mockReturnValue(["episode-1", "episode-2"]);
+
+    await handleToggle("series", "series-123", STATE_WATCHING);
+
+    expect(Store.setState).toHaveBeenCalledWith("episode", "episode-1", "seen");
+    expect(global.localStorage.setItem).not.toHaveBeenCalled();
+    expect(global.localStorage.removeItem).not.toHaveBeenCalled();
   });
 });
