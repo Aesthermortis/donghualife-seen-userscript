@@ -11,7 +11,11 @@ import withErrorHandling from "./error-handler.js";
 
 /**
  * @module AppController
- * @description The main controller that orchestrates the entire script.
+ * @description
+ * Main orchestrator for the DonghuaLife "Mark as Seen" userscript.
+ * Handles initialization, state synchronization, UI decoration, event listeners,
+ * and propagation of seen/tracking states across episodes, seasons, series, and movies.
+ * All business logic and UI updates are coordinated through this controller.
  */
 const AppController = (() => {
   let syncChannel = null;
@@ -71,6 +75,14 @@ const AppController = (() => {
     .map((cfg) => cfg.item)
     .join(", ");
 
+  /**
+   * Schedules a function to run during idle time or the next animation frame.
+   * Uses `requestIdleCallback` if available, otherwise falls back to `requestAnimationFrame`.
+   * Ensures non-blocking execution for batch DOM/UI updates.
+   *
+   * @param {() => void} fn - The function to execute.
+   * @returns {Promise<void>} Resolves after the function has run.
+   */
   const scheduleBatch = (fn) =>
     new Promise((resolve) => {
       if ("requestIdleCallback" in window) {
@@ -95,6 +107,14 @@ const AppController = (() => {
       }
     });
 
+  /**
+   * Creates a filter function to determine if a DOM node is relevant for decoration.
+   * The returned function checks if the node is an Element and matches any of the
+   * selectors for episodes, seasons, series, or movies, or contains such elements.
+   *
+   * @returns {(node: Node) => boolean} A predicate function that returns true if the node
+   *   is relevant for decoration, false otherwise.
+   */
   const createRelevantNodeFilter = () => (node) => {
     if (!(node instanceof Element)) {
       return false;
@@ -107,6 +127,13 @@ const AppController = (() => {
     );
   };
 
+  /**
+   * Sets up DOM observation for relevant content nodes and triggers decoration callbacks.
+   * Uses a custom node filter to detect episode, season, series, and movie elements.
+   * Registers the observer with throttling and batching for performance.
+   *
+   * @returns {void}
+   */
   const observeDomChanges = () => {
     const nodeFilter = createRelevantNodeFilter();
     DOMObserver.observe(observerCallback, {
@@ -289,6 +316,16 @@ const AppController = (() => {
     void scheduleBatchDecorations(batches);
   };
 
+  /**
+   * Callback for DOMObserver to handle detected DOM mutations.
+   *
+   * Receives an array of mutated nodes and determines which roots should be traversed for decoration.
+   * For each root, applies decoration logic to eligible episode, season, series, and movie elements.
+   * If no nodes are provided, applies decoration globally.
+   *
+   * @param {Element[]} [nodes=[]] - Array of mutated DOM nodes detected by the observer.
+   * @returns {void}
+   */
   const observerCallback = (nodes = []) => {
     if (!Array.isArray(nodes) || nodes.length === 0) {
       applyAll();
@@ -709,7 +746,18 @@ const AppController = (() => {
     });
   };
 
-  // Handles state changes from the Store and updates the UI accordingly.
+  /**
+   * Handles global state changes and updates the UI accordingly.
+   *
+   * Responds to initialization, preference changes, and entity state changes (series, season, episode, movie).
+   * - On "INIT", toggles row highlight class based on preferences.
+   * - On "PREFS_CHANGE", updates highlight and language, shows toast, and reloads if language changed.
+   * - On entity CLEAR, refreshes all decorated items of that type.
+   * - On entity CHANGE/REMOVE, refreshes the specific item.
+   *
+   * @param {StateChange} change - The state change event object.
+   * @returns {void}
+   */
   const handleStateChange = (change) => {
     if (change.type === "INIT") {
       document.documentElement.classList.toggle(Constants.ROOT_HL_CLASS, Store.isRowHighlightOn());
@@ -776,8 +824,15 @@ const AppController = (() => {
   };
 
   /**
-   * App initialization: ensures robust state synchronization, localization,
-   * and immediate UI feedback.
+   * Initializes the DonghuaLife "Mark as Seen" userscript.
+   *
+   * Ensures the DOM is ready, injects global styles, subscribes to state changes,
+   * loads persistent state from IndexedDB, initializes i18n, creates the settings menu,
+   * sets up cross-tab sync and global click listeners, decorates all eligible items,
+   * and observes dynamic DOM changes for automatic decoration.
+   * Also auto-marks the current episode or movie as seen if applicable.
+   *
+   * @returns {Promise<void>} Resolves when initialization is complete.
    */
   const init = async () => {
     // Ensure document.body is available
