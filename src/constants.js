@@ -64,7 +64,7 @@ export const Constants = {
   SERIES_LINK_SELECTOR: "a[href^='/series/'], a[href^='/serie/']",
   SERIES_ITEM_SELECTOR: ".series, .views-row .serie, .listado-series .serie, .titulo",
   MOVIE_LINK_SELECTOR: "a[href^='/movie/'], a[href^='/pelicula/'], a[href^='/ver-pelicula/']",
-  MOVIE_ITEM_SELECTOR: ".movie, .views-row .movie, .listado-movies .movie",
+  MOVIE_ITEM_SELECTOR: ".movie, .views-row .movie, .listado-movies .movie, .serie",
 
   // Defaults
   DEFAULT_ROW_HL: false,
