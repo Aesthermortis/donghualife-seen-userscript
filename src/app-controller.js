@@ -118,6 +118,134 @@ const AppController = (() => {
   };
 
   /**
+   * Determines whether a given DOM element should be decorated as a specific content type.
+   *
+   * Checks if the element matches the expected selector, passes validation, contains the required link,
+   * and has not already been decorated for series or season types.
+   *
+   * @param {Element} el - The DOM element to check.
+   * @param {ItemType} type - The content type ("episode", "series", "season", "movie").
+   * @param {Record<ItemType, SelectorConfig>} selectors - The selectors configuration object.
+   * @returns {boolean} True if the element should be decorated, false otherwise.
+   */
+  const shouldDecorateElement = (el, type, selectors) => {
+    const cfg = selectors[type];
+    if (!cfg) {
+      return false;
+    }
+    if (!el.matches(cfg.item)) {
+      return false;
+    }
+    if (!cfg.validate(el)) {
+      return false;
+    }
+    if (!Utils.$(cfg.link, el)) {
+      return false;
+    }
+    if (
+      (type === "series" || type === "season") &&
+      el.getAttribute(Constants.ITEM_DECORATED_ATTR) === type
+    ) {
+      return false;
+    }
+    return true;
+  };
+
+  /**
+   * Classifies DOM elements into batches by content type for decoration.
+   *
+   * Iterates over candidate elements and, for each, determines its type
+   * (episode, season, series, or movie) using detection order and selector config.
+   * Returns an object with arrays of elements grouped by type.
+   *
+   * @param {Iterable<Element>} candidates - Array of DOM elements to classify.
+   * @param {ItemType[]} detectionOrder - Ordered list of types to check (e.g. ["episode", "season", ...]).
+   * @param {Record<ItemType, SelectorConfig>} selectors - Selector configuration for each type.
+   * @returns {Object} Object with keys for each type and arrays of elements to decorate.
+   */
+  const classifyElements = (candidates, detectionOrder, selectors) => {
+    const batches = {
+      episode: [],
+      season: [],
+      series: [],
+      movie: [],
+    };
+
+    for (const el of candidates) {
+      for (const detectionType of detectionOrder) {
+        if (shouldDecorateElement(el, detectionType, selectors)) {
+          batches[detectionType].push(el);
+          break;
+        }
+      }
+    }
+
+    return batches;
+  };
+
+  /**
+   * Schedules decoration of episode, season, series, and movie batches using idle batching.
+   *
+   * For each batch type, decorates all items in that batch by invoking ContentDecorator.decorateItem
+   * with the appropriate configuration. Decoration is performed in idle time using requestIdleCallback
+   * or requestAnimationFrame to avoid blocking the main thread.
+   *
+   * @param {Object} batches - Object containing arrays of elements to decorate, grouped by type.
+   * @returns {Promise<void>}
+   */
+  const scheduleBatchDecorations = async (batches) => {
+    if (batches.episode.length) {
+      await scheduleBatch(() => {
+        for (const item of batches.episode) {
+          ContentDecorator.decorateItem(item, {
+            type: "episode",
+            selector: Constants.EPISODE_LINK_SELECTOR,
+            onToggle: handleToggle,
+          });
+        }
+      });
+    }
+
+    if (batches.season.length) {
+      await scheduleBatch(() => {
+        for (const item of batches.season) {
+          ContentDecorator.decorateItem(item, {
+            type: "season",
+            selector: Constants.LINK_SELECTOR,
+            onToggle: handleToggle,
+            preferKind: "season",
+          });
+        }
+      });
+    }
+
+    if (batches.series.length) {
+      await scheduleBatch(() => {
+        for (const item of batches.series) {
+          ContentDecorator.decorateItem(item, {
+            type: "series",
+            selector: Constants.LINK_SELECTOR,
+            onToggle: handleToggle,
+            preferKind: "series",
+          });
+        }
+      });
+    }
+
+    if (batches.movie.length) {
+      await scheduleBatch(() => {
+        for (const item of batches.movie) {
+          ContentDecorator.decorateItem(item, {
+            type: "movie",
+            selector: Constants.LINK_SELECTOR,
+            onToggle: handleToggle,
+          });
+        }
+      });
+    }
+  };
+
+  /**
    * Decorates eligible items using a single DOM traversal and idle batching.
    *
    * Traverses the DOM starting from the given root (defaults to document),
@@ -146,110 +274,19 @@ const AppController = (() => {
       return;
     }
 
-    const batches = {
-      episode: [],
-      season: [],
-      series: [],
-      movie: [],
-    };
-
     const detectionOrder = ["episode", "season", "series", "movie"];
-
-    for (const el of candidates) {
-      let type = null;
-      let cfg = null;
-
-      for (const candidateType of detectionOrder) {
-        const candidateCfg = SELECTORS[candidateType];
-        if (!el.matches(candidateCfg.item)) {
-          continue;
-        }
-        if (!candidateCfg.validate(el)) {
-          continue;
-        }
-        if (!Utils.$(candidateCfg.link, el)) {
-          continue;
-        }
-        if (
-          (candidateType === "series" || candidateType === "season") &&
-          el.getAttribute(Constants.ITEM_DECORATED_ATTR) === candidateType
-        ) {
-          continue;
-        }
-        type = candidateType;
-        cfg = candidateCfg;
-        break;
-      }
-
-      if (!type || !cfg) {
-        continue;
-      }
-
-      batches[type].push(el);
-    }
+    const batches = classifyElements(candidates, detectionOrder, SELECTORS);
 
     if (
       !batches.episode.length &&
-      !batches.series.length &&
       !batches.season.length &&
+      !batches.series.length &&
       !batches.movie.length
     ) {
       return;
     }
 
-    const run = async () => {
-      if (batches.episode.length) {
-        await scheduleBatch(() => {
-          for (const item of batches.episode) {
-            ContentDecorator.decorateItem(item, {
-              type: "episode",
-              selector: Constants.EPISODE_LINK_SELECTOR,
-              onToggle: handleToggle,
-            });
-          }
-        });
-      }
-
-      if (batches.season.length) {
-        await scheduleBatch(() => {
-          for (const item of batches.season) {
-            ContentDecorator.decorateItem(item, {
-              type: "season",
-              selector: Constants.LINK_SELECTOR,
-              onToggle: handleToggle,
-              preferKind: "season",
-            });
-          }
-        });
-      }
-
-      if (batches.series.length) {
-        await scheduleBatch(() => {
-          for (const item of batches.series) {
-            ContentDecorator.decorateItem(item, {
-              type: "series",
-              selector: Constants.LINK_SELECTOR,
-              onToggle: handleToggle,
-              preferKind: "series",
-            });
-          }
-        });
-      }
-
-      if (batches.movie.length) {
-        await scheduleBatch(() => {
-          for (const item of batches.movie) {
-            ContentDecorator.decorateItem(item, {
-              type: "movie",
-              selector: Constants.LINK_SELECTOR,
-              onToggle: handleToggle,
-            });
-          }
-        });
-      }
-    };
-
-    void run();
+    void scheduleBatchDecorations(batches);
   };
 
   const observerCallback = (nodes = []) => {
