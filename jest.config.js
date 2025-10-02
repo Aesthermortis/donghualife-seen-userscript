@@ -13,7 +13,7 @@ export default {
     "\.(css)$": "<rootDir>/tests/mocks/styleMock.js",
   },
 
-  // Discover both *.test.* and *.spec.* in JS/MJS across the repo (src/ and tests/).
+  // Discover both *.test.* and *.spec.* in JS across the repo (src/ and tests/).
   testMatch: [
     "<rootDir>/tests/**/*.{spec,test}.js",
     "<rootDir>/tests/**/*.{spec,test}.mjs",
@@ -33,9 +33,9 @@ export default {
 
   // Mock non-JS file imports to prevent syntax errors.
   transform: {
-    // Keep existing JS/MJS transform behavior
-    "^.+\\.(js|mjs)$": "babel-jest",
+    // Keep existing JS transform behavior
+    "^.+\.(js|cjs|mjs)$": "babel-jest",
     // Return an empty module for CSS files
-    "^.+\\.css$": "<rootDir>/tests/setup/jest.css-transform.cjs",
+    "^.+\.css$": "<rootDir>/tests/setup/jest.css-transform.cjs",
   },
 };
