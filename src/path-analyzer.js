@@ -114,34 +114,82 @@ const PathAnalyzer = (() => {
       return null;
     }
 
-    // String input
-    if (typeof input === "string") {
+    const tryCreateUrl = (value, base) => {
       try {
-        // Check if it's already a pathname
-        if (input.startsWith("/")) {
-          return input;
-        }
-        // Try to parse as full URL
-        const url = new URL(input);
-        return url.pathname;
+        return base ? new URL(value, base) : new URL(value);
       } catch {
-        return input.startsWith("/") ? input : null;
+        return null;
       }
+    };
+
+    const isHttpProtocol = (url) =>
+      Boolean(url && (url.protocol === "http:" || url.protocol === "https:"));
+
+    let cachedBaseHref = null;
+    const getBaseHref = () => {
+      if (cachedBaseHref) {
+        return cachedBaseHref;
+      }
+
+      const candidates = [];
+
+      if (typeof document !== "undefined" && typeof document.baseURI === "string") {
+        candidates.push(document.baseURI);
+      }
+
+      if (typeof location !== "undefined" && typeof location.href === "string") {
+        candidates.push(location.href);
+      }
+
+      for (const candidate of candidates) {
+        if (!candidate || candidate === "about:blank") {
+          continue;
+        }
+        const parsed = tryCreateUrl(candidate);
+        if (isHttpProtocol(parsed)) {
+          cachedBaseHref = parsed.href;
+          return cachedBaseHref;
+        }
+      }
+
+      cachedBaseHref = "http://localhost/";
+      return cachedBaseHref;
+    };
+
+    if (typeof input === "string") {
+      const value = input.trim();
+      if (!value) {
+        return null;
+      }
+
+      if (value.startsWith("/")) {
+        const resolved = tryCreateUrl(value, getBaseHref());
+        if (isHttpProtocol(resolved)) {
+          return resolved.pathname;
+        }
+        const [pathname] = value.split(/[?#]/);
+        return pathname || null;
+      }
+
+      const absolute = tryCreateUrl(value);
+      if (isHttpProtocol(absolute)) {
+        return absolute.pathname;
+      }
+      if (absolute) {
+        return null;
+      }
+
+      const relative = tryCreateUrl(value, getBaseHref());
+      return isHttpProtocol(relative) ? relative.pathname : null;
     }
 
-    // URL object
-    if (input instanceof URL) {
-      return input.pathname;
+    if (typeof URL !== "undefined" && input instanceof URL) {
+      return isHttpProtocol(input) ? input.pathname : null;
     }
 
-    // HTMLAnchorElement
-    if (input instanceof HTMLAnchorElement && input.href) {
-      return new URL(input.href, window.location.origin).pathname;
-    }
-
-    // HTMLElement with href property
-    if (input?.nodeType === 1 && typeof input.href === "string") {
-      return new URL(input.href, window.location.origin).pathname;
+    if (input && input.nodeType === 1 && typeof input.href === "string") {
+      const resolved = tryCreateUrl(input.href, getBaseHref());
+      return isHttpProtocol(resolved) ? resolved.pathname : null;
     }
 
     return null;
