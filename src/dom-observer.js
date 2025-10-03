@@ -1,5 +1,8 @@
 import { Constants } from "./constants.js";
 import Utils from "./utils.js";
+import { makeLogger } from "./core/errors.js";
+
+const logDomObserverError = makeLogger("DOMObserver");
 
 /**
  * @module DOMObserver
@@ -217,7 +220,7 @@ const DOMObserver = (() => {
           try {
             return nodeFilter(node);
           } catch (error) {
-            void error;
+            logDomObserverError("nodeFilter failed; including node by default", error);
             return true;
           }
         });
