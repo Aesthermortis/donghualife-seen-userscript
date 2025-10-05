@@ -1,3 +1,17 @@
+## [3.7.0](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.6.2...v3.7.0) (2025-10-05)
+
+### Features
+
+- **core:** add error utilities for consistent logging ([70ecd65](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/70ecd65ca363c32b2a5f9456fb6398b8d8995d98))
+- **core:** add fallback and rethrow options ([0683044](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/0683044f93f779dce6cd4e00b82c804d9b6192e4))
+
+### Bug Fixes
+
+- **constants:** add .serie to MOVIE_ITEM_SELECTOR ([738cc9c](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/738cc9cae4d99609b4c912594ac74eba501dca95))
+- **core:** handle AppController.init errors on startup ([8d540d8](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/8d540d8514e71b94e96a976f3f3a5b5af7301d63))
+- **dom-observer:** log error when nodeFilter fails in observe method ([0915675](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/09156758b5307726d8b746c6c770189a427d1943))
+- **path-analyzer:** resolve relative strings ([4c07067](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/4c070670fdae73901ad5404a817a8bc1b7956232))
+
 ## [3.6.2](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.6.1...v3.6.2) (2025-09-27)
 
 ### Bug Fixes
