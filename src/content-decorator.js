@@ -15,7 +15,18 @@ const ContentDecorator = (() => {
    * Supports different strategies based on the target type.
    */
   const fallbackIdMap = new WeakMap();
-  let fallbackIdSeq = 0;
+  const sessionFallbackIdPrefix =
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  let fallbackLocalSeq = 0;
+  /**
+   * Generates a collision-resistant fallback identifier within the current session.
+   * @returns {string}
+   */
+  function makeFallbackId() {
+    fallbackLocalSeq += 1;
+    return `no-link:${sessionFallbackIdPrefix}:${fallbackLocalSeq}`;
+  }
 
   const getPrimaryLink = (item, type) => {
     let selector = null;
@@ -66,8 +77,7 @@ const ContentDecorator = (() => {
       return fallbackIdMap.get(item);
     }
 
-    fallbackIdSeq += 1;
-    const fallbackId = `no-link-${fallbackIdSeq}`;
+    const fallbackId = makeFallbackId();
     fallbackIdMap.set(item, fallbackId);
     return fallbackId;
   };
