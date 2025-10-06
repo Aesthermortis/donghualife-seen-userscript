@@ -2,6 +2,7 @@
 import "core-js/stable";
 import "fake-indexeddb/auto";
 import { jest } from "@jest/globals";
+import "jest-extended/all";
 
 // Quiet noisy logs but keep errors
 beforeAll(() => {

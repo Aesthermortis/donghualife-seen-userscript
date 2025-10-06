@@ -1,5 +1,9 @@
 export default {
-  // Use a DOM-like environment for tests that touch document, window, or location.
+  // Auto-clear and restore spies/mocks between tests.
+  clearMocks: true,
+  restoreMocks: true,
+
+  // Use a DOM-like environment for tests that touch `document`, `window`, or `location`.
   testEnvironment: "jsdom",
 
   // Make jsdom's URL stable to avoid hostname-origin flakiness in tests.
@@ -7,29 +11,30 @@ export default {
     url: "https://www.donghualife.com/",
   },
 
-  setupFilesAfterEnv: ["<rootDir>/tests/setup/jest.setup.js"],
+  // Look for modules under src/ when resolving imports.
+  roots: ["<rootDir>/src", "<rootDir>/tests"],
 
-  moduleNameMapper: {
-    "\.(css)$": "<rootDir>/tests/mocks/styleMock.js",
-  },
-
-  // Discover both *.test.* and *.spec.* in JS across the repo (src/ and tests/).
+  // Discover *.test.* or *.spec.* files within the dedicated tests/ folder.
   testMatch: [
     "<rootDir>/tests/**/*.{spec,test}.js",
     "<rootDir>/tests/**/*.{spec,test}.mjs",
     "<rootDir>/tests/**/*.{spec,test}.cjs",
   ],
 
-  // Auto-clear and restore spies/mocks between tests.
-  clearMocks: true,
-  restoreMocks: true,
+  // Mock non-JS assets to prevent parsing errors.
+  moduleNameMapper: {
+    "\\.css$": "<rootDir>/tests/mocks/styleMock.js",
+  },
 
-  // (Optional) Limit discovery roots if you prefer a narrower search.
-  // roots: ["<rootDir>/src", "<rootDir>/tests"],
+  // Run setup code after the test environment is ready (per test file).
+  setupFilesAfterEnv: ["<rootDir>/tests/setup/jest.setup.js"],
 
-  // (Optional) Enable V8 coverage and basic include patterns.
+  // (Optional) Native coverage; add patterns if/when you need reports.
   // coverageProvider: "v8",
-  // collectCoverageFrom: ["src/**/*.js", "!src/**/*.test.js"]
+  // collectCoverageFrom: ["src/**/*.js", "!src/**/?(*.)+(spec|test).[cm]js"],
+
+  // (Optional) Add custom reporters in CI only.
+  // reporters: ["default", ["jest-junit", { outputDirectory: "reports/junit" }]],
 
   // Mock non-JS file imports to prevent syntax errors.
   transform: {
