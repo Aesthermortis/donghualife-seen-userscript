@@ -1,13 +1,5 @@
 import { jest } from "@jest/globals";
 
-const utilsModuleMock = {
-  default: {
-    $: jest.fn(() => null),
-    $$: jest.fn(() => []),
-    isElementVisible: jest.fn(() => true),
-  },
-};
-
 const storeModuleMock = {
   default: {
     getStatus: jest.fn(() => "untracked"),
@@ -54,7 +46,6 @@ const pathAnalyzerModuleMock = {
   },
 };
 
-await jest.unstable_mockModule("../../src/utils.js", () => utilsModuleMock);
 await jest.unstable_mockModule("../../src/store.js", () => storeModuleMock);
 await jest.unstable_mockModule("../../src/ui-manager.js", () => uiManagerModuleMock);
 await jest.unstable_mockModule("../../src/i18n.js", () => i18nModuleMock);
@@ -104,7 +95,7 @@ describe("ContentDecorator.computeId", () => {
     const id = ContentDecorator.computeId(element, ".primary-link");
 
     expect(id).toBeNull();
-    expect(element.hasAttribute(Constants.ITEM_ID_ATTR)).toBe(false);
+    expect(element.hasAttribute(Constants.ITEM_ID_ATTR)).toBeFalse();
     expect(PathAnalyzer.analyze).not.toHaveBeenCalled();
   });
 });

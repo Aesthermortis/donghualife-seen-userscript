@@ -1,7 +1,8 @@
 import { Constants, STATE_UNTRACKED, STATE_WATCHING, STATE_COMPLETED } from "./constants.js";
 import PathAnalyzer from "./path-analyzer.js";
 import Store from "./store.js";
-import Utils from "./utils.js";
+import { select, selectAll } from "./dom/select.js";
+import { isElementVisible } from "./dom/visibility.js";
 import I18n from "./i18n.js";
 import UIManager from "./ui-manager.js";
 
@@ -15,37 +16,58 @@ const ContentDecorator = (() => {
    * Supports different strategies based on the target type.
    */
   const fallbackIdMap = new WeakMap();
-  const sessionFallbackIdPrefix =
-    globalThis.crypto?.randomUUID?.() ??
-    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+  const createSessionFallbackPrefix = () => {
+    const cryptoObj = globalThis.crypto;
+    if (cryptoObj?.randomUUID) {
+      return cryptoObj.randomUUID();
+    }
+    if (cryptoObj?.getRandomValues) {
+      const entropy = new Uint32Array(3);
+      cryptoObj.getRandomValues(entropy);
+      return Array.from(entropy, (value) => value.toString(36)).join("-");
+    }
+    const timeSeed = Date.now().toString(36);
+    const perfSeed =
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? Math.floor(performance.now()).toString(36)
+        : "0";
+    return `time-${timeSeed}-${perfSeed}`;
+  };
+
+  const sessionFallbackIdPrefix = createSessionFallbackPrefix();
   let fallbackLocalSeq = 0;
   /**
    * Generates a collision-resistant fallback identifier within the current session.
-   * @returns {string}
+   * @returns {string} A unique fallback identifier.
    */
   function makeFallbackId() {
     fallbackLocalSeq += 1;
     return `no-link:${sessionFallbackIdPrefix}:${fallbackLocalSeq}`;
   }
 
-  const getPrimaryLink = (item, type) => {
-    let selector = null;
+  const getPrimarySelector = (type) => {
     switch (type) {
-      case "episode":
-        selector = Constants.EPISODE_LINK_SELECTOR;
-        break;
-      case "season":
-        selector = Constants.SEASON_LINK_SELECTOR;
-        break;
-      case "series":
-        selector = Constants.SERIES_LINK_SELECTOR;
-        break;
-      case "movie":
-        selector = Constants.MOVIE_LINK_SELECTOR;
-        break;
-      default:
-        selector = null;
+      case "episode": {
+        return Constants.EPISODE_LINK_SELECTOR;
+      }
+      case "season": {
+        return Constants.SEASON_LINK_SELECTOR;
+      }
+      case "series": {
+        return Constants.SERIES_LINK_SELECTOR;
+      }
+      case "movie": {
+        return Constants.MOVIE_LINK_SELECTOR;
+      }
+      default: {
+        return null;
+      }
     }
+  };
+
+  const getPrimaryLink = (item, type) => {
+    const selector = typeof type === "string" ? getPrimarySelector(type) : null;
     if (selector) {
       const link = item.querySelector(selector);
       if (link) {
@@ -106,14 +128,14 @@ const ContentDecorator = (() => {
   };
 
   const collectVisibleEpisodeIds = (card) => {
-    const body = Utils.$(".card-body", card) || card;
+    const body = select(".card-body", card) || card;
     const selector = `[${Constants.ITEM_DECORATED_ATTR}="episode"]`;
-    const items = Utils.$$(selector, body);
+    const items = selectAll(selector, body);
     const ids = [];
     const seen = new Set();
 
     for (const element of items) {
-      if (!Utils.isElementVisible(element)) {
+      if (!isElementVisible(element)) {
         continue;
       }
       const id = ensureItemIdentifiers(element, "episode");
@@ -132,7 +154,6 @@ const ContentDecorator = (() => {
    * are present in the episode card header. Adds accessible buttons for
    * bulk marking and unmarking, and wires up click handlers to perform
    * the corresponding bulk actions.
-   *
    * @param {Element} item - The episode element for which to ensure bulk controls.
    */
   function ensureBulkControls(item) {
@@ -143,8 +164,8 @@ const ContentDecorator = (() => {
     if (!card) {
       return;
     }
-    const header = Utils.$(".card-header", card);
-    const table = Utils.$("table[data-us-dhl-ctrlcol]", card);
+    const header = select(".card-header", card);
+    const table = select("table[data-us-dhl-ctrlcol]", card);
     if (!header || !table || header.getAttribute(Constants.BULK_READY_ATTR) === "1") {
       return;
     }
@@ -179,13 +200,12 @@ const ContentDecorator = (() => {
     });
 
     controls.append(markButton, unmarkButton);
-    header.appendChild(controls);
+    header.append(controls);
   }
 
   /**
    * Updates the visual state and ARIA attributes of a toggle button
    * based on the item type and current status.
-   *
    * @param {HTMLButtonElement} btn - The button element to update.
    * @param {string} type - The type of item ("episode", "movie", "series", "season").
    * @param {string} status - The current status ("seen", STATE_WATCHING, STATE_COMPLETED, etc.).
@@ -203,17 +223,20 @@ const ContentDecorator = (() => {
       btn.setAttribute("aria-pressed", String(isSet));
     } else if (type === "series" || type === "season") {
       switch (status) {
-        case STATE_COMPLETED:
+        case STATE_COMPLETED: {
           textKey = "completed";
           titleKey = "btnTitleCompleted";
           break;
-        case STATE_WATCHING:
+        }
+        case STATE_WATCHING: {
           textKey = "watching";
           titleKey = "btnTitleWatching";
           break;
-        default:
+        }
+        default: {
           textKey = "mark";
           titleKey = "btnTitleNotWatching";
+        }
       }
       const isFollowed = status === STATE_COMPLETED || status === STATE_WATCHING;
       ariaLabelKey = "btnToggleWatching";
@@ -233,7 +256,6 @@ const ContentDecorator = (() => {
    * Creates a toggle button for marking an item as seen/watching/completed.
    * The button is styled and configured according to the item type and status.
    * Used for both card and table row contexts.
-   *
    * @param {string} type - The type of item ("episode", "movie", "series", "season").
    * @param {string} status - The current status of the item.
    * @param {boolean} isCard - Whether the button is for a card (true) or a table row (false).
@@ -254,7 +276,6 @@ const ContentDecorator = (() => {
   /**
    * Prepares a table for episode controls by adding a control cell to the header row.
    * Ensures the table is only marked up once per session.
-   *
    * @param {HTMLTableElement} table - The table element to prepare.
    */
   const prepareTable = (table) => {
@@ -266,7 +287,7 @@ const ContentDecorator = (() => {
       const th = document.createElement("th");
       th.className = Constants.CTRL_CELL_CLASS;
       th.setAttribute(Constants.OWNED_ATTR, "1");
-      headerRow.appendChild(th);
+      headerRow.append(th);
     }
     table.setAttribute(Constants.TABLE_MARK_ATTR, "1");
   };
@@ -274,7 +295,6 @@ const ContentDecorator = (() => {
   /**
    * Creates and appends a table cell (<td>) to the given row for episode control buttons.
    * The cell is assigned the appropriate class and attribute for identification.
-   *
    * @param {HTMLTableRowElement} row - The table row to which the control cell will be appended.
    * @returns {HTMLTableCellElement} The newly created control cell element.
    */
@@ -282,7 +302,7 @@ const ContentDecorator = (() => {
     const c = document.createElement("td");
     c.className = Constants.CTRL_CELL_CLASS;
     c.setAttribute(Constants.OWNED_ATTR, "1");
-    row.appendChild(c);
+    row.append(c);
     return c;
   };
 
@@ -290,7 +310,6 @@ const ContentDecorator = (() => {
    * Updates the visual state and CSS classes of a content item based on its type and status.
    * For episodes and movies, toggles the "seen" class. For series and seasons, toggles
    * "watching" and "completed" classes. Also updates the corresponding toggle button state.
-   *
    * @param {Element} item - The DOM element representing the content item.
    * @param {string} type - The type of the item ("episode", "movie", "series", "season").
    * @param {string} status - The current status of the item ("seen", STATE_WATCHING, STATE_COMPLETED, etc.).
@@ -317,12 +336,11 @@ const ContentDecorator = (() => {
    * Decorates a content item (episode, movie, series, or season) with a toggle button
    * for marking its state (seen, watching, completed). Ensures the item is only decorated once,
    * sets up bulk controls for episodes, and wires up the toggle handler.
-   *
    * @param {Element} item - The DOM element representing the content item.
-   * @param {Object} options - Options for decoration.
+   * @param {object} options - Options for decoration.
    * @param {string} options.type - The type of item ("episode", "movie", "series", "season").
-   * @param {Function} options.onToggle - Callback invoked when the toggle button is clicked.
-   * @param {string|null} [options.preferKind=null] - Optional override for the decorated kind.
+   * @param {(itemType: string, id: string, currentStatus: "seen" | "watching" | "completed" | "untracked" | null | undefined) => (void | Promise<void>)} options.onToggle - Callback invoked when the toggle button is clicked.
+   * @param {string|null} [options.preferKind] - Optional override for the decorated kind.
    */
   const decorateItem = (item, { type, onToggle, preferKind = null }) => {
     if (item.getAttribute(Constants.ITEM_DECORATED_ATTR) === type) {
@@ -361,18 +379,18 @@ const ContentDecorator = (() => {
       container = getButtonContainerForRow(item);
     }
     if (isCard) {
-      const cs = window.getComputedStyle(container);
+      const cs = globalThis.getComputedStyle(container);
       if (cs.position === "static") {
         container.style.position = "relative";
       }
     }
-    container.appendChild(btn);
+    container.append(btn);
 
     btn.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
       const currentStatus = btn.getAttribute(Constants.ITEM_STATE_ATTR);
-      onToggle(type, id, currentStatus, item);
+      onToggle(type, id, currentStatus);
     });
   };
 
@@ -380,12 +398,11 @@ const ContentDecorator = (() => {
    * Ensures that the given series is marked as "watching" in the persistent store.
    * If the series is not already tracked as "watching", updates its state and optionally shows a toast notification.
    * Also refreshes the UI for the series.
-   *
    * @async
    * @function ensureSeriesWatching
    * @param {string} seriesId - The unique identifier for the series.
-   * @param {Object} [options={}] - Optional configuration object.
-   * @param {boolean} [options.showToast=false] - Whether to show a toast notification when auto-tracking.
+   * @param {object} [options] - Optional configuration object.
+   * @param {boolean} [options.showToast] - Whether to show a toast notification when auto-tracking.
    * @returns {Promise<void>}
    */
   async function ensureSeriesWatching(seriesId, { showToast = false } = {}) {
@@ -410,12 +427,11 @@ const ContentDecorator = (() => {
    * Ensures that the given season is marked as "watching" in the persistent store.
    * If the season is not already tracked as "watching", updates its state and optionally shows a toast notification.
    * Also refreshes the UI for the season and ensures the parent series is tracked as "watching".
-   *
    * @async
    * @function ensureSeasonWatching
    * @param {string} seasonId - The unique identifier for the season.
-   * @param {Object} [options={}] - Optional configuration object.
-   * @param {boolean} [options.showToast=false] - Whether to show a toast notification when auto-tracking.
+   * @param {object} [options] - Optional configuration object.
+   * @param {boolean} [options.showToast] - Whether to show a toast notification when auto-tracking.
    * @returns {Promise<void>}
    */
   async function ensureSeasonWatching(seasonId, { showToast = false } = {}) {
@@ -451,7 +467,6 @@ const ContentDecorator = (() => {
    * Cleans up the season tracking state if all episodes are unmarked ("seen" state is empty).
    * If no episodes remain marked as "seen" and the season is currently tracked as "watching",
    * removes the season from the persistent store and updates the UI.
-   *
    * @async
    * @function maybeCleanupSeason
    * @param {string} seasonId - The unique identifier for the season.
@@ -473,7 +488,6 @@ const ContentDecorator = (() => {
    * Cleans up the series tracking state if no seasons or episodes are marked as tracked.
    * If the series has no tracked seasons (watching or completed) and no episodes marked as "seen",
    * removes the series from the persistent store and updates the UI.
-   *
    * @async
    * @function maybeCleanupSeries
    * @param {string} seriesId - The unique identifier for the series.
@@ -498,41 +512,23 @@ const ContentDecorator = (() => {
     updateItemUI(seriesId, { type: "series" });
   }
 
-  /**
-   * Handles bulk marking or unmarking of all visible episodes within a card.
-   * Collects all visible episode IDs, determines which should be marked or unmarked,
-   * updates their state in the persistent store, updates related season and series tracking,
-   * refreshes the UI for affected items, and displays a toast notification summarizing the action.
-   *
-   * @async
-   * @function handleBulkToggle
-   * @param {Element} card - The card element containing episode items.
-   * @param {Object} options - Bulk action options.
-   * @param {boolean} options.mark - If true, mark all visible episodes as "seen"; if false, unmark them.
-   * @returns {Promise<void>}
-   */
-  async function handleBulkToggle(card, { mark }) {
-    const ids = collectVisibleEpisodeIds(card);
-    const emptyKey = mark ? "toastBulkMarkVisibleNone" : "toastBulkUnmarkVisibleNone";
+  const getBulkToastKey = (mark, suffix) =>
+    `${mark ? "toastBulkMarkVisible" : "toastBulkUnmarkVisible"}${suffix}`;
 
-    if (ids.length === 0) {
-      UIManager.showToast(I18n.t(emptyKey));
-      return;
-    }
+  const showBulkToast = (mark, suffix, params) => {
+    UIManager.showToast(I18n.t(getBulkToastKey(mark, suffix), params));
+  };
 
-    const targets = ids.filter((id) => {
+  const filterEpisodesNeedingUpdate = (episodeIds, mark) =>
+    episodeIds.filter((id) => {
       const status = Store.getStatus("episode", id);
       return mark ? status !== "seen" : status === "seen";
     });
 
-    if (targets.length === 0) {
-      UIManager.showToast(I18n.t(emptyKey));
-      return;
-    }
-
+  const collectRelatedIdentifiers = (episodeIds) => {
     const seasonIds = new Set();
     const seriesIds = new Set();
-    for (const episodeId of targets) {
+    for (const episodeId of episodeIds) {
       const info = PathAnalyzer.analyze(episodeId);
       if (!info.isValid || info.type !== PathAnalyzer.EntityType.EPISODE) {
         continue;
@@ -545,38 +541,63 @@ const ContentDecorator = (() => {
         seriesIds.add(seriesId);
       }
     }
+    return { seasonIds, seriesIds };
+  };
 
+  const applyBulkEpisodeChanges = async (episodeIds, mark, seasonIds, seriesIds) => {
     if (mark) {
-      await Promise.all(targets.map((id) => Store.setState("episode", id, "seen")));
-      for (const seasonId of seasonIds) {
-        await ensureSeasonWatching(seasonId);
-      }
-      for (const seriesId of seriesIds) {
-        await ensureSeriesWatching(seriesId);
-      }
-    } else {
-      await Promise.all(targets.map((id) => Store.clearState("episode", id)));
-      for (const seasonId of seasonIds) {
-        await maybeCleanupSeason(seasonId);
-      }
-      for (const seriesId of seriesIds) {
-        await maybeCleanupSeries(seriesId);
-      }
+      await Promise.all(episodeIds.map((id) => Store.setState("episode", id, "seen")));
+      await Promise.all(Array.from(seasonIds, (seasonId) => ensureSeasonWatching(seasonId)));
+      await Promise.all(Array.from(seriesIds, (seriesId) => ensureSeriesWatching(seriesId)));
+      return;
     }
+    await Promise.all(episodeIds.map((id) => Store.clearState("episode", id)));
+    await Promise.all(Array.from(seasonIds, (seasonId) => maybeCleanupSeason(seasonId)));
+    await Promise.all(Array.from(seriesIds, (seriesId) => maybeCleanupSeries(seriesId)));
+  };
 
-    for (const id of targets) {
+  const refreshEpisodesUI = (episodeIds) => {
+    for (const id of episodeIds) {
       updateItemUI(id, { type: "episode" });
     }
+  };
 
-    const successKey = mark ? "toastBulkMarkVisibleSuccess" : "toastBulkUnmarkVisibleSuccess";
-    UIManager.showToast(I18n.t(successKey, { count: targets.length }));
+  /**
+   * Handles bulk marking or unmarking of all visible episodes within a card.
+   * Collects all visible episode IDs, determines which should be marked or unmarked,
+   * updates their state in the persistent store, updates related season and series tracking,
+   * refreshes the UI for affected items, and displays a toast notification summarizing the action.
+   * @async
+   * @function handleBulkToggle
+   * @param {Element} card - The card element containing episode items.
+   * @param {object} options - Bulk action options.
+   * @param {boolean} options.mark - If true, mark all visible episodes as "seen"; if false, unmark them.
+   * @returns {Promise<void>}
+   */
+  async function handleBulkToggle(card, { mark }) {
+    const ids = collectVisibleEpisodeIds(card);
+    if (ids.length === 0) {
+      showBulkToast(mark, "None");
+      return;
+    }
+
+    const targets = filterEpisodesNeedingUpdate(ids, mark);
+
+    if (targets.length === 0) {
+      showBulkToast(mark, "None");
+      return;
+    }
+
+    const { seasonIds, seriesIds } = collectRelatedIdentifiers(targets);
+    await applyBulkEpisodeChanges(targets, mark, seasonIds, seriesIds);
+    refreshEpisodesUI(targets);
+    showBulkToast(mark, "Success", { count: targets.length });
   }
 
   /**
    * Computes a stable identifier for a decorated element.
    * If a `selector` is provided, requires a matching link or returns null.
    * The `preferKind` parameter overrides the inferred decorated type.
-   *
    * @function computeId
    * @param {Element} element - The DOM element to compute the ID for.
    * @param {string|null} selector - Optional CSS selector for the primary link.
@@ -604,7 +625,7 @@ const ContentDecorator = (() => {
   };
 
   const updateItemUI = (id, { type }) => {
-    const items = Utils.$$(`[${Constants.ITEM_DECORATED_ATTR}="${type}"]`);
+    const items = selectAll(`[${Constants.ITEM_DECORATED_ATTR}="${type}"]`);
     for (const item of items) {
       const nodeId = ensureItemIdentifiers(item, type);
       if (nodeId !== id) {

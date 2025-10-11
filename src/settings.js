@@ -1,7 +1,8 @@
 import Store from "./store.js";
 import UIManager from "./ui-manager.js";
 import I18n from "./i18n.js";
-import Utils from "./utils.js";
+import { downloadTextFile } from "./io/download-text-file.js";
+import { select } from "./dom/select.js";
 import { Constants, STATE_WATCHING, STATE_COMPLETED } from "./constants.js";
 
 /**
@@ -16,8 +17,71 @@ const Settings = (() => {
     series: new Set([STATE_WATCHING, STATE_COMPLETED]),
     season: new Set([STATE_WATCHING, STATE_COMPLETED]),
   };
+  const getCollection = (source, type) => {
+    switch (type) {
+      case "episode": {
+        return source.episode;
+      }
+      case "movie": {
+        return source.movie;
+      }
+      case "series": {
+        return source.series;
+      }
+      case "season": {
+        return source.season;
+      }
+      default: {
+        return;
+      }
+    }
+  };
 
-  const parseBackupPayload = (rawText) => {
+  const getAllowedStatesForType = (type) => {
+    switch (type) {
+      case "episode": {
+        return ALLOWED_STATES.episode;
+      }
+      case "movie": {
+        return ALLOWED_STATES.movie;
+      }
+      case "series": {
+        return ALLOWED_STATES.series;
+      }
+      case "season": {
+        return ALLOWED_STATES.season;
+      }
+      default: {
+        return new Set();
+      }
+    }
+  };
+
+  const setCollection = (target, type, value) => {
+    switch (type) {
+      case "episode": {
+        target.episode = value;
+        break;
+      }
+      case "movie": {
+        target.movie = value;
+        break;
+      }
+      case "series": {
+        target.series = value;
+        break;
+      }
+      case "season": {
+        target.season = value;
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+  };
+
+  const parseJsonRoot = (rawText) => {
     let parsed;
     try {
       parsed = JSON.parse(rawText);
@@ -34,55 +98,150 @@ const Settings = (() => {
       throw err;
     }
 
-    const sanitized = {};
+    return parsed;
+  };
+
+  const readEntriesForType = (parsed, type) => {
+    const entries = getCollection(parsed, type);
+    if (entries === undefined || entries === null) {
+      return [];
+    }
+    if (!Array.isArray(entries)) {
+      const err = new Error(`Backup entry for "${type}" must be an array.`);
+      err.code = "INVALID_COLLECTION";
+      throw err;
+    }
+    return entries;
+  };
+
+  const validateBaseFields = (type, entry, index, allowedStates) => {
+    const { id, state } = entry;
+    if (typeof id !== "string" || !id.trim()) {
+      const err = new Error(`Invalid id for "${type}" at index ${index}.`);
+      err.code = "INVALID_ID";
+      throw err;
+    }
+
+    if (typeof state !== "string") {
+      const err = new Error(`Invalid state for "${type}" at index ${index}.`);
+      err.code = "INVALID_STATE";
+      throw err;
+    }
+
+    const normalizedState = state.trim();
+    if (!allowedStates.has(normalizedState)) {
+      const err = new Error(`Unsupported state "${state}" for "${type}" at index ${index}.`);
+      err.code = "INVALID_STATE";
+      throw err;
+    }
+
+    return { trimmedId: id.trim(), normalizedState };
+  };
+
+  const assertNoUnexpectedKeys = (type, entry, index) => {
+    for (const key in entry) {
+      if (!Object.prototype.hasOwnProperty.call(entry, key)) {
+        continue;
+      }
+      if (
+        key !== "id" &&
+        key !== "state" &&
+        key !== "t" &&
+        key !== "series_id" &&
+        key !== "season_id" &&
+        key !== "name"
+      ) {
+        const err = new Error(`Unsupported field "${key}" for "${type}" at index ${index}.`);
+        err.code = "INVALID_FIELD";
+        throw err;
+      }
+    }
+  };
+
+  const applyOptionalFields = (type, entry, index, target) => {
+    if (Object.prototype.hasOwnProperty.call(entry, "t")) {
+      const rawTimestamp = entry.t;
+      if (typeof rawTimestamp !== "number" || Number.isNaN(rawTimestamp)) {
+        const err = new Error(`Invalid timestamp for "${type}" at index ${index}.`);
+        err.code = "INVALID_FIELD";
+        throw err;
+      }
+      target.t = rawTimestamp;
+    }
+    if (Object.prototype.hasOwnProperty.call(entry, "series_id")) {
+      const rawSeriesId = entry.series_id;
+      if (typeof rawSeriesId !== "string" || !rawSeriesId.trim()) {
+        const err = new Error(`Invalid series_id for "${type}" at index ${index}.`);
+        err.code = "INVALID_FIELD";
+        throw err;
+      }
+      target.series_id = rawSeriesId.trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(entry, "season_id")) {
+      const rawSeasonId = entry.season_id;
+      if (typeof rawSeasonId !== "string" || !rawSeasonId.trim()) {
+        const err = new Error(`Invalid season_id for "${type}" at index ${index}.`);
+        err.code = "INVALID_FIELD";
+        throw err;
+      }
+      target.season_id = rawSeasonId.trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(entry, "name")) {
+      const rawName = entry.name;
+      if (typeof rawName !== "string" || !rawName.trim()) {
+        const err = new Error(`Invalid name for "${type}" at index ${index}.`);
+        err.code = "INVALID_FIELD";
+        throw err;
+      }
+      target.name = rawName.trim();
+    }
+  };
+
+  const sanitizeEntry = (type, entry, index, allowedStates) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      const err = new Error(`Invalid record for "${type}" at index ${index}.`);
+      err.code = "INVALID_ENTRY";
+      throw err;
+    }
+
+    const { trimmedId, normalizedState } = validateBaseFields(type, entry, index, allowedStates);
+    assertNoUnexpectedKeys(type, entry, index);
+
+    const sanitizedEntry = {
+      id: trimmedId,
+      state: normalizedState,
+    };
+
+    applyOptionalFields(type, entry, index, sanitizedEntry);
+
+    return sanitizedEntry;
+  };
+
+  const sanitizeEntriesForType = (type, entries, allowedStates) => {
+    const cleaned = [];
+    for (const [index, entry] of entries.entries()) {
+      cleaned.push(sanitizeEntry(type, entry, index, allowedStates));
+    }
+    return cleaned;
+  };
+
+  const parseBackupPayload = (rawText) => {
+    const parsed = parseJsonRoot(rawText);
+
+    const sanitized = Object.create(null);
     let total = 0;
 
     for (const type of SUPPORTED_TYPES) {
-      const entries = parsed[type];
-      if (entries === null) {
+      const entries = readEntriesForType(parsed, type);
+      if (entries.length === 0) {
         continue;
       }
-      if (!Array.isArray(entries)) {
-        const err = new Error(`Backup entry for "${type}" must be an array.`);
-        err.code = "INVALID_COLLECTION";
-        throw err;
-      }
 
-      const allowedStates = ALLOWED_STATES[type];
-      const cleaned = [];
+      const allowedStates = getAllowedStatesForType(type);
+      const cleaned = sanitizeEntriesForType(type, entries, allowedStates);
 
-      entries.forEach((entry, index) => {
-        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-          const err = new Error(`Invalid record for "${type}" at index ${index}.`);
-          err.code = "INVALID_ENTRY";
-          throw err;
-        }
-
-        const { id, state } = entry;
-        if (typeof id !== "string" || !id.trim()) {
-          const err = new Error(`Invalid id for "${type}" at index ${index}.`);
-          err.code = "INVALID_ID";
-          throw err;
-        }
-
-        if (typeof state !== "string") {
-          const err = new Error(`Invalid state for "${type}" at index ${index}.`);
-          err.code = "INVALID_STATE";
-          throw err;
-        }
-
-        const normalizedState = state.trim();
-        if (!allowedStates.has(normalizedState)) {
-          const err = new Error(`Unsupported state "${state}" for "${type}" at index ${index}.`);
-          err.code = "INVALID_STATE";
-          throw err;
-        }
-
-        cleaned.push({ ...entry, id: id.trim(), state: normalizedState });
-      });
-
-      if (cleaned.length) {
-        sanitized[type] = cleaned;
+      if (cleaned.length > 0) {
+        setCollection(sanitized, type, cleaned);
         total += cleaned.length;
       }
     }
@@ -100,12 +259,16 @@ const Settings = (() => {
       const exportObj = {};
       for (const type of SUPPORTED_TYPES) {
         const all = await Store.getAll(type);
-        exportObj[type] = all.filter((entry) => typeof entry.state === "string");
+        setCollection(
+          exportObj,
+          type,
+          all.filter((entry) => typeof entry.state === "string"),
+        );
       }
       const jsonData = JSON.stringify(exportObj, null, 2);
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const timestamp = new Date().toISOString().replaceAll(/[:.]/g, "-");
       const filename = `donghualife-seen-backup-${timestamp}.json`;
-      Utils.downloadTextFile(filename, jsonData);
+      downloadTextFile(filename, jsonData);
       UIManager.showToast(I18n.t("toastExportSuccess"));
     } catch (error) {
       console.error("Failed to export data:", error);
@@ -142,7 +305,7 @@ const Settings = (() => {
 
       let importedCount = 0;
       for (const type of SUPPORTED_TYPES) {
-        const entries = data[type] || [];
+        const entries = getCollection(data, type) || [];
         for (const entry of entries) {
           const { id, state, ...extras } = entry;
           await Store.setState(type, id, state, extras);
@@ -257,7 +420,7 @@ const Settings = (() => {
     UIManager.showSettingsMenu({ title: I18n.t("settingsTitle"), actions });
   };
   const createButton = () => {
-    if (Utils.$(`.${Constants.FAB_CLASS}`)) {
+    if (select(`.${Constants.FAB_CLASS}`)) {
       return;
     }
     const fab = document.createElement("button");
@@ -267,7 +430,7 @@ const Settings = (() => {
     fab.innerHTML =
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.44,0.17-0.48,0.41L9.22,5.72C8.63,5.96,8.1,6.29,7.6,6.67L5.22,5.71C5,5.64,4.75,5.7,4.63,5.92L2.71,9.24 c-0.12,0.2-0.07,0.47,0.12,0.61l2.03,1.58C4.8,11.66,4.78,11.98,4.78,12.3c0,0.32,0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.38,2.91 c0.04,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.48,0.41l0.38-2.91c0.59-0.24,1.12-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0.02,0.59-0.22l1.92-3.32c0.12-0.2,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>';
     fab.addEventListener("click", openMenu);
-    document.body.appendChild(fab);
+    document.body.append(fab);
   };
   return { createButton };
 })();

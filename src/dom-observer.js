@@ -1,5 +1,5 @@
 import { Constants } from "./constants.js";
-import Utils from "./utils.js";
+import { makeRateLimited } from "./timing/rate-limit.js";
 import { makeLogger } from "./core/errors.js";
 
 const logDomObserverError = makeLogger("DOMObserver");
@@ -13,7 +13,7 @@ const DOMObserver = (() => {
   const pendingRefs = new Set();
 
   const clearPendingRefs = () => {
-    if (!pendingRefs.size) {
+    if (pendingRefs.size === 0) {
       return;
     }
     for (const ref of pendingRefs) {
@@ -42,7 +42,7 @@ const DOMObserver = (() => {
       return node.textContent?.trim() === "";
     }
     if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-      return Array.from(node.childNodes).every(isOwnedSubtree);
+      return [...node.childNodes].every((child) => isOwnedSubtree(child));
     }
     if (!isElement(node)) {
       return false;
@@ -50,14 +50,14 @@ const DOMObserver = (() => {
     if (!isOwnedByScript(node)) {
       return false;
     }
-    return Array.from(node.childNodes).every(isOwnedSubtree);
+    return [...node.childNodes].every((child) => isOwnedSubtree(child));
   };
 
   const areAllOwned = (nodes) => {
     if (!nodes || nodes.length === 0) {
       return false;
     }
-    return Array.from(nodes).every(isOwnedSubtree);
+    return [...nodes].every((node) => isOwnedSubtree(node));
   };
 
   const shouldIgnoreAttributeMutation = (mutation) => {
@@ -73,7 +73,7 @@ const DOMObserver = (() => {
     }
     if (
       attributeName === "class" &&
-      Array.from(target.classList).some((cls) => cls.startsWith("us-dhl-"))
+      [...target.classList].some((cls) => cls.startsWith("us-dhl-"))
     ) {
       return true;
     }
@@ -85,7 +85,10 @@ const DOMObserver = (() => {
     const hasOwnedAdds = addedNodes.length > 0 && areAllOwned(addedNodes);
     const hasOwnedRemovals = removedNodes.length > 0 && areAllOwned(removedNodes);
 
-    if ((addedNodes.length && !hasOwnedAdds) || (removedNodes.length && !hasOwnedRemovals)) {
+    if (
+      (addedNodes.length > 0 && !hasOwnedAdds) ||
+      (removedNodes.length > 0 && !hasOwnedRemovals)
+    ) {
       return false;
     }
 
@@ -104,9 +107,39 @@ const DOMObserver = (() => {
     return true;
   };
 
+  const scheduleTask = (fn, timeout = 50) =>
+    new Promise((resolve) => {
+      const runSafely = () => {
+        try {
+          fn();
+        } finally {
+          resolve();
+        }
+      };
+      if ("requestIdleCallback" in globalThis) {
+        requestIdleCallback(runSafely, { timeout });
+        return;
+      }
+      requestAnimationFrame(runSafely);
+    });
+
+  const dispatchNodes = async (nodes, callback, batchSize) => {
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      return;
+    }
+    if (batchSize > 0 && nodes.length > batchSize) {
+      for (let index = 0; index < nodes.length; index += batchSize) {
+        const chunk = nodes.slice(index, index + batchSize);
+        await scheduleTask(() => callback(chunk));
+      }
+      return;
+    }
+    await scheduleTask(() => callback(nodes));
+  };
+
   const collectFromNode = (node) => {
     if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-      return Array.from(node.childNodes).some(collectFromNode);
+      return [...node.childNodes].some((child) => collectFromNode(child));
     }
     if (isElement(node)) {
       return markPending(node);
@@ -143,7 +176,7 @@ const DOMObserver = (() => {
   };
 
   const flushPending = (callback) => {
-    if (!pendingRefs.size) {
+    if (pendingRefs.size === 0) {
       return;
     }
     const nodes = [];
@@ -155,7 +188,7 @@ const DOMObserver = (() => {
       }
     }
     pendingRefs.clear();
-    if (nodes.length) {
+    if (nodes.length > 0) {
       callback(nodes);
     }
   };
@@ -182,37 +215,13 @@ const DOMObserver = (() => {
 
     disconnect();
 
-    const schedule = (fn) =>
-      new Promise((resolve) => {
-        if ("requestIdleCallback" in window) {
-          requestIdleCallback(
-            () => {
-              try {
-                fn();
-              } finally {
-                resolve();
-              }
-            },
-            { timeout: 50 },
-          );
-        } else {
-          requestAnimationFrame(() => {
-            try {
-              fn();
-            } finally {
-              resolve();
-            }
-          });
-        }
-      });
-
     const processPending = async () => {
       let nodes = [];
       const collector = (collected) => {
         nodes = collected;
       };
       flushPending(collector);
-      if (!nodes.length) {
+      if (nodes.length === 0) {
         return;
       }
       if (typeof nodeFilter === "function") {
@@ -225,21 +234,13 @@ const DOMObserver = (() => {
           }
         });
       }
-      if (!nodes.length) {
+      if (nodes.length === 0) {
         return;
       }
-      if (batchSize > 0 && nodes.length > batchSize) {
-        for (let i = 0; i < nodes.length; i += batchSize) {
-          const chunk = nodes.slice(i, i + batchSize);
-
-          await schedule(() => callback(chunk));
-        }
-        return;
-      }
-      callback(nodes);
+      await dispatchNodes(nodes, callback, batchSize);
     };
 
-    const rateLimited = Utils.makeRateLimited(processPending, {
+    const rateLimited = makeRateLimited(processPending, {
       throttleMs: rate?.throttleMs ?? 120,
       debounceMs: rate?.debounceMs ?? 180,
     });

@@ -1,13 +1,6 @@
 import { jest } from "@jest/globals";
 import { STATE_COMPLETED, STATE_UNTRACKED, STATE_WATCHING } from "../../src/constants.js";
 
-const utilsModuleMock = {
-  default: {
-    $: jest.fn(() => null),
-    $$: jest.fn(() => []),
-  },
-};
-
 const storeModuleMock = {
   default: {
     getStatus: jest.fn(),
@@ -83,7 +76,6 @@ const errorHandlerModuleMock = {
   default: jest.fn((fn) => fn()),
 };
 
-await jest.unstable_mockModule("../../src/utils.js", () => utilsModuleMock);
 await jest.unstable_mockModule("../../src/store.js", () => storeModuleMock);
 await jest.unstable_mockModule("../../src/settings.js", () => settingsModuleMock);
 await jest.unstable_mockModule("../../src/content-decorator.js", () => contentDecoratorModuleMock);
@@ -177,7 +169,7 @@ describe("handleToggle", () => {
     jest.clearAllMocks();
     Store.getEpisodesForSeason.mockReturnValue([]);
     Store.getSeasonsForSeries.mockReturnValue([]);
-    Object.defineProperty(global, "localStorage", {
+    Object.defineProperty(globalThis, "localStorage", {
       value: {
         setItem: jest.fn(),
         removeItem: jest.fn(),
@@ -188,7 +180,7 @@ describe("handleToggle", () => {
   });
 
   afterEach(() => {
-    delete global.localStorage;
+    delete globalThis.localStorage;
   });
 
   test("completing a season does not emit per-episode sync updates", async () => {
@@ -198,8 +190,8 @@ describe("handleToggle", () => {
 
     expect(Store.setState).toHaveBeenCalledWith("episode", "episode-1", "seen");
     expect(Store.setState).toHaveBeenCalledWith("episode", "episode-2", "seen");
-    expect(global.localStorage.setItem).not.toHaveBeenCalled();
-    expect(global.localStorage.removeItem).not.toHaveBeenCalled();
+    expect(globalThis.localStorage.setItem).not.toHaveBeenCalled();
+    expect(globalThis.localStorage.removeItem).not.toHaveBeenCalled();
   });
 
   test("completing a series does not emit per-episode sync updates", async () => {
@@ -209,7 +201,7 @@ describe("handleToggle", () => {
     await handleToggle("series", "series-123", STATE_WATCHING);
 
     expect(Store.setState).toHaveBeenCalledWith("episode", "episode-1", "seen");
-    expect(global.localStorage.setItem).not.toHaveBeenCalled();
-    expect(global.localStorage.removeItem).not.toHaveBeenCalled();
+    expect(globalThis.localStorage.setItem).not.toHaveBeenCalled();
+    expect(globalThis.localStorage.removeItem).not.toHaveBeenCalled();
   });
 });

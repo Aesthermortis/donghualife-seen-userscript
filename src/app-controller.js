@@ -1,5 +1,10 @@
+// @ts-check
+/** @typedef {import('../types/types').ItemType} ItemType */
+/** @typedef {import('../types/types').SelectorConfig} SelectorConfig */
+
 import { Constants, STATE_UNTRACKED, STATE_WATCHING, STATE_COMPLETED } from "./constants.js";
-import Utils from "./utils.js";
+import { select, selectAll } from "./dom/select.js";
+import { isElementVisible } from "./dom/visibility.js";
 import I18n from "./i18n.js";
 import UIManager from "./ui-manager.js";
 import Store from "./store.js";
@@ -18,8 +23,37 @@ import withErrorHandling from "./error-handler.js";
  * All business logic and UI updates are coordinated through this controller.
  */
 const AppController = (() => {
+  /** @typedef {() => unknown} CleanupTask */
+  /** @typedef {() => void} BatchTask */
+  /**
+   * @typedef {object} DecorateBatchMap
+   * @property {Element[]} episode Elements to decorate as episodes
+   * @property {Element[]} season Elements to decorate as seasons
+   * @property {Element[]} series Elements to decorate as series
+   * @property {Element[]} movie Elements to decorate as movies
+   */
+  /** @typedef {"seen" | "watching" | "completed" | "untracked" | null | undefined} TrackingState */
+  /**
+   * @typedef {object} SyncPayload
+   * @property {string} id Entity ID
+   * @property {boolean} seen Seen status
+   * @property {number} t Timestamp
+   */
+  /**
+   * @typedef {object} StateChange
+   * @property {string} type Type of state change (e.g., "INIT", "PREFS_CHANGE", "SERIES_CHANGE", etc.)
+   * @property {Record<string, unknown>} [payload] Additional data related to the state change
+   */
+  /** @typedef {{ rowHighlight?: boolean, userLang?: string } & Record<string, unknown>} UserPrefs */
+
+  /** @type {BroadcastChannel | null} */
   let syncChannel = null;
+  /** @type {Set<CleanupTask>} */
   const cleanupTasks = new Set();
+  /**
+   * @param {CleanupTask} fn - The cleanup function to register.
+   * @returns {CleanupTask} A function to unregister the cleanup task.
+   */
   const registerCleanup = (fn) => {
     if (typeof fn !== "function") {
       return () => {};
@@ -44,6 +78,10 @@ const AppController = (() => {
 
   let storeSubscribed = false;
 
+  /** @type {ReadonlyArray<ItemType>} */
+  const KNOWN_ITEM_TYPES = ["episode", "season", "series", "movie"];
+
+  /** @type {Record<ItemType, SelectorConfig>} */
   const SELECTORS = {
     episode: {
       item: Constants.EPISODE_ITEM_SELECTOR,
@@ -71,6 +109,70 @@ const AppController = (() => {
     },
   };
 
+  Object.freeze(SELECTORS);
+
+  /**
+   * Checks if the provided value matches one of the supported item types.
+   * @param {unknown} value - Arbitrary value to validate.
+   * @returns {value is ItemType} True if the value is a known item type, false otherwise.
+   */
+  const isKnownItemType = (value) =>
+    value === "episode" || value === "season" || value === "series" || value === "movie";
+
+  /**
+   * Retrieves the selector configuration for a known item type.
+   * Uses explicit property access to avoid dynamic object lookups.
+   * @param {ItemType} type - The item type to resolve.
+   * @returns {SelectorConfig | undefined} The selector configuration, or undefined if type is unknown.
+   */
+  const getSelectorConfig = (type) => {
+    switch (type) {
+      case "episode": {
+        return SELECTORS.episode;
+      }
+      case "season": {
+        return SELECTORS.season;
+      }
+      case "series": {
+        return SELECTORS.series;
+      }
+      case "movie": {
+        return SELECTORS.movie;
+      }
+      default: {
+        return;
+      }
+    }
+  };
+
+  /**
+   * Determines whether a value is a valid tracking state.
+   * @param {unknown} value - Value to check.
+   * @returns {value is TrackingState} True if the value is a valid tracking state, false otherwise.
+   */
+  const isTrackingState = (value) =>
+    value === "seen" ||
+    value === "watching" ||
+    value === "completed" ||
+    value === "untracked" ||
+    value === null ||
+    value === undefined;
+
+  /**
+   * Retrieves the tracking status for an entity, coercing unknown values to "untracked".
+   * @param {ItemType} type - Entity type to query.
+   * @param {string} id - Entity identifier.
+   * @returns {TrackingState} The tracking status ("seen", "watching", "completed", "untracked", null, or undefined).
+   */
+  const getTrackingStatus = (type, id) => {
+    const status = Store.getStatus(type, id);
+    if (isTrackingState(status)) {
+      return status;
+    }
+    console.warn(`Unknown tracking status "${String(status)}" for ${type}:${id}`);
+    return "untracked";
+  };
+
   const ALL_ITEMS_SELECTOR = Object.values(SELECTORS)
     .map((cfg) => cfg.item)
     .join(", ");
@@ -79,13 +181,12 @@ const AppController = (() => {
    * Schedules a function to run during idle time or the next animation frame.
    * Uses `requestIdleCallback` if available, otherwise falls back to `requestAnimationFrame`.
    * Ensures non-blocking execution for batch DOM/UI updates.
-   *
-   * @param {() => void} fn - The function to execute.
+   * @param {BatchTask} fn - The function to execute.
    * @returns {Promise<void>} Resolves after the function has run.
    */
   const scheduleBatch = (fn) =>
     new Promise((resolve) => {
-      if ("requestIdleCallback" in window) {
+      if ("requestIdleCallback" in globalThis) {
         requestIdleCallback(
           () => {
             try {
@@ -108,14 +209,13 @@ const AppController = (() => {
     });
 
   /**
-   * Creates a filter function to determine if a DOM node is relevant for decoration.
-   * The returned function checks if the node is an Element and matches any of the
-   * selectors for episodes, seasons, series, or movies, or contains such elements.
-   *
-   * @returns {(node: Node) => boolean} A predicate function that returns true if the node
-   *   is relevant for decoration, false otherwise.
+   * Determines if a DOM node is relevant for decoration.
+   * Checks if the node is an Element and matches any of the selectors for episodes, seasons, series, or movies,
+   * or contains such elements.
+   * @param {Node} node - The DOM node to check.
+   * @returns {boolean} True if the node is relevant for decoration, false otherwise.
    */
-  const createRelevantNodeFilter = () => (node) => {
+  const relevantNodeFilter = (node) => {
     if (!(node instanceof Element)) {
       return false;
     }
@@ -131,16 +231,14 @@ const AppController = (() => {
    * Sets up DOM observation for relevant content nodes and triggers decoration callbacks.
    * Uses a custom node filter to detect episode, season, series, and movie elements.
    * Registers the observer with throttling and batching for performance.
-   *
    * @returns {void}
    */
   const observeDomChanges = () => {
-    const nodeFilter = createRelevantNodeFilter();
     DOMObserver.observe(observerCallback, {
       observeAttributes: false,
       rate: { throttleMs: 120, debounceMs: 180 },
       batchSize: 12,
-      nodeFilter,
+      nodeFilter: relevantNodeFilter,
     });
   };
 
@@ -149,14 +247,15 @@ const AppController = (() => {
    *
    * Checks if the element matches the expected selector, passes validation, contains the required link,
    * and has not already been decorated for series or season types.
-   *
    * @param {Element} el - The DOM element to check.
    * @param {ItemType} type - The content type ("episode", "series", "season", "movie").
-   * @param {Record<ItemType, SelectorConfig>} selectors - The selectors configuration object.
    * @returns {boolean} True if the element should be decorated, false otherwise.
    */
-  const shouldDecorateElement = (el, type, selectors) => {
-    const cfg = selectors[type];
+  const shouldDecorateElement = (el, type) => {
+    if (!isKnownItemType(type)) {
+      return false;
+    }
+    const cfg = getSelectorConfig(type);
     if (!cfg) {
       return false;
     }
@@ -166,7 +265,7 @@ const AppController = (() => {
     if (!cfg.validate(el)) {
       return false;
     }
-    if (!Utils.$(cfg.link, el)) {
+    if (!select(cfg.link, el)) {
       return false;
     }
     if (
@@ -184,13 +283,12 @@ const AppController = (() => {
    * Iterates over candidate elements and, for each, determines its type
    * (episode, season, series, or movie) using detection order and selector config.
    * Returns an object with arrays of elements grouped by type.
-   *
    * @param {Iterable<Element>} candidates - Array of DOM elements to classify.
    * @param {ItemType[]} detectionOrder - Ordered list of types to check (e.g. ["episode", "season", ...]).
-   * @param {Record<ItemType, SelectorConfig>} selectors - Selector configuration for each type.
-   * @returns {Object} Object with keys for each type and arrays of elements to decorate.
+   * @returns {DecorateBatchMap} Object with keys for each type and arrays of elements to decorate.
    */
-  const classifyElements = (candidates, detectionOrder, selectors) => {
+  const classifyElements = (candidates, detectionOrder) => {
+    /** @type {DecorateBatchMap} */
     const batches = {
       episode: [],
       season: [],
@@ -200,8 +298,28 @@ const AppController = (() => {
 
     for (const el of candidates) {
       for (const detectionType of detectionOrder) {
-        if (shouldDecorateElement(el, detectionType, selectors)) {
-          batches[detectionType].push(el);
+        if (shouldDecorateElement(el, detectionType)) {
+          switch (detectionType) {
+            case "episode": {
+              batches.episode.push(el);
+              break;
+            }
+            case "season": {
+              batches.season.push(el);
+              break;
+            }
+            case "series": {
+              batches.series.push(el);
+              break;
+            }
+            case "movie": {
+              batches.movie.push(el);
+              break;
+            }
+            default: {
+              break;
+            }
+          }
           break;
         }
       }
@@ -216,29 +334,26 @@ const AppController = (() => {
    * For each batch type, decorates all items in that batch by invoking ContentDecorator.decorateItem
    * with the appropriate configuration. Decoration is performed in idle time using requestIdleCallback
    * or requestAnimationFrame to avoid blocking the main thread.
-   *
-   * @param {Object} batches - Object containing arrays of elements to decorate, grouped by type.
+   * @param {DecorateBatchMap} batches - Object containing arrays of elements to decorate, grouped by type.
    * @returns {Promise<void>}
    */
   const scheduleBatchDecorations = async (batches) => {
-    if (batches.episode.length) {
+    if (batches.episode.length > 0) {
       await scheduleBatch(() => {
         for (const item of batches.episode) {
           ContentDecorator.decorateItem(item, {
             type: "episode",
-            selector: Constants.EPISODE_LINK_SELECTOR,
             onToggle: handleToggle,
           });
         }
       });
     }
 
-    if (batches.season.length) {
+    if (batches.season.length > 0) {
       await scheduleBatch(() => {
         for (const item of batches.season) {
           ContentDecorator.decorateItem(item, {
             type: "season",
-            selector: Constants.LINK_SELECTOR,
             onToggle: handleToggle,
             preferKind: "season",
           });
@@ -246,12 +361,11 @@ const AppController = (() => {
       });
     }
 
-    if (batches.series.length) {
+    if (batches.series.length > 0) {
       await scheduleBatch(() => {
         for (const item of batches.series) {
           ContentDecorator.decorateItem(item, {
             type: "series",
-            selector: Constants.LINK_SELECTOR,
             onToggle: handleToggle,
             preferKind: "series",
           });
@@ -259,12 +373,11 @@ const AppController = (() => {
       });
     }
 
-    if (batches.movie.length) {
+    if (batches.movie.length > 0) {
       await scheduleBatch(() => {
         for (const item of batches.movie) {
           ContentDecorator.decorateItem(item, {
             type: "movie",
-            selector: Constants.LINK_SELECTOR,
             onToggle: handleToggle,
           });
         }
@@ -279,12 +392,12 @@ const AppController = (() => {
    * finds all episode, season, series, and movie elements matching selectors,
    * and decorates them using ContentDecorator. Batching is performed using
    * requestIdleCallback or requestAnimationFrame for performance.
-   *
-   * @param {Element|Document} [root=document] - The root node to start traversal from.
+   * @param {Element|Document} [root] - The root node to start traversal from.
    * @returns {void}
    */
   const applyAll = (root = document) => {
     const rootIsElement = root instanceof Element;
+    /** @type {Element[]} */
     const candidates = [];
 
     if (rootIsElement && root.matches(ALL_ITEMS_SELECTOR)) {
@@ -297,19 +410,17 @@ const AppController = (() => {
       }
     }
 
-    if (!candidates.length) {
+    if (candidates.length === 0) {
       return;
     }
 
-    const detectionOrder = ["episode", "season", "series", "movie"];
-    const batches = classifyElements(candidates, detectionOrder, SELECTORS);
+    /** @type {ItemType[]} */
+    const detectionOrder = [...KNOWN_ITEM_TYPES];
+    const batches = classifyElements(candidates, detectionOrder);
 
-    if (
-      !batches.episode.length &&
-      !batches.season.length &&
-      !batches.series.length &&
-      !batches.movie.length
-    ) {
+    const { episode = [], season = [], series = [], movie = [] } = batches;
+
+    if ([episode, season, series, movie].every((a) => a.length === 0)) {
       return;
     }
 
@@ -322,8 +433,7 @@ const AppController = (() => {
    * Receives an array of mutated nodes and determines which roots should be traversed for decoration.
    * For each root, applies decoration logic to eligible episode, season, series, and movie elements.
    * If no nodes are provided, applies decoration globally.
-   *
-   * @param {Element[]} [nodes=[]] - Array of mutated DOM nodes detected by the observer.
+   * @param {Element[]} [nodes] - Array of mutated DOM nodes detected by the observer.
    * @returns {void}
    */
   const observerCallback = (nodes = []) => {
@@ -332,23 +442,44 @@ const AppController = (() => {
       return;
     }
 
+    /** @type {Element[]} */
     const roots = [];
     for (const node of nodes) {
       if (!(node instanceof Element)) {
         continue;
       }
-      if (roots.some((existing) => existing.contains(node))) {
+      let covered = false;
+      if (roots.length > 0) {
+        for (const existing of roots) {
+          if (!(existing instanceof Element) || typeof existing.contains !== "function") {
+            continue;
+          }
+          if (existing.contains(node)) {
+            covered = true;
+            break;
+          }
+        }
+      }
+      if (covered) {
         continue;
       }
-      for (let i = roots.length - 1; i >= 0; i -= 1) {
-        if (node.contains(roots[i])) {
-          roots.splice(i, 1);
+      if (roots.length > 0 && typeof node.contains === "function") {
+        for (const candidate of roots) {
+          if (!(candidate instanceof Element)) {
+            continue;
+          }
+          if (node.contains(candidate)) {
+            const idx = roots.indexOf(candidate);
+            if (idx !== -1) {
+              roots.splice(idx, 1);
+            }
+          }
         }
       }
       roots.push(node);
     }
 
-    if (!roots.length) {
+    if (roots.length === 0) {
       return;
     }
 
@@ -378,10 +509,10 @@ const AppController = (() => {
       if (seasonStatus === STATE_UNTRACKED) {
         const extraFields = {};
         if (seriesId) {
-          extraFields.series_id = seriesId;
+          Object.assign(extraFields, { series_id: seriesId });
         }
         const seasonName = PathAnalyzer.formatSeasonName(seasonId) || "Unknown Season";
-        extraFields.name = seasonName;
+        Object.assign(extraFields, { name: seasonName });
 
         await Store.setState("season", seasonId, STATE_WATCHING, extraFields);
         UIManager.showToast(I18n.t("toastAutoTrackSeason", { seasonName }));
@@ -405,9 +536,8 @@ const AppController = (() => {
   /**
    * Synchronizes seen state across tabs using BroadcastChannel or localStorage fallback.
    * Only episodes and movies emit sync updates.
-   *
    * @function emitSyncUpdate
-   * @param {string} type - The entity type ("episode" or "movie").
+   * @param {"episode" | "movie"} type - The entity type ("episode" or "movie").
    * @param {string} id - The unique identifier of the entity.
    * @description
    * Emits a synchronization message containing the seen state for the given entity.
@@ -421,7 +551,15 @@ const AppController = (() => {
 
     const seen = Store.getStatus(type, id) === "seen";
     const entity = Store.get(type, id);
-    const timestamp = typeof entity?.t === "number" ? entity.t : Date.now();
+    let timestamp = Date.now();
+    if (entity && typeof entity === "object") {
+      const entityRecord = /** @type {Record<string, unknown>} */ (entity);
+      const candidate = entityRecord["t"];
+      if (typeof candidate === "number") {
+        timestamp = candidate;
+      }
+    }
+    /** @type {SyncPayload} */
     const payload = { id, seen, t: timestamp };
 
     if (syncChannel) {
@@ -433,7 +571,12 @@ const AppController = (() => {
     localStorage.removeItem(Constants.SYNC_CHANNEL_NAME);
   };
 
-  // Fallback when IndexedDB lacks episode records but DOM still has them.
+  /**
+   * Fallback when IndexedDB lacks episode records but DOM still has them.
+   * @param {string|null} [filterSeasonId] - Limit results to a specific season.
+   * @param {string|null} [filterSeriesId] - Limit results to a specific series.
+   * @returns {string[]} Episode identifiers discovered in the DOM.
+   */
   const discoverEpisodesFromDOM = (filterSeasonId = null, filterSeriesId = null) => {
     const selector = `[${Constants.ITEM_DECORATED_ATTR}="episode"]`;
     const nodes = document.querySelectorAll(selector);
@@ -441,7 +584,7 @@ const AppController = (() => {
     const seenIds = new Set();
 
     for (const element of nodes) {
-      if (!Utils.isElementVisible(element)) {
+      if (!isElementVisible(element)) {
         continue;
       }
       const id = ContentDecorator.computeId(element, Constants.LINK_SELECTOR, "episode");
@@ -466,7 +609,11 @@ const AppController = (() => {
     return ids;
   };
 
-  // Retrieve cached episodes for a season and gracefully fall back to the DOM.
+  /**
+   * Retrieve cached episodes for a season and gracefully fall back to DOM discovery.
+   * @param {string} seasonId - Season identifier to lookup.
+   * @returns {Promise<string[]>} Episode identifiers for the season.
+   */
   const getEpisodesForSeasonWithFallback = async (seasonId) => {
     let episodes = Store.getEpisodesForSeason(seasonId);
     if (episodes.length === 0) {
@@ -524,10 +671,9 @@ const AppController = (() => {
    * and synchronizes state across tabs. For episodes and movies, it emits
    * cross-tab sync events. For series and seasons, it propagates completion
    * or removal to child entities.
-   *
    * @param {string} type - The entity type ("episode", "series", "season", "movie").
    * @param {string} id - The unique identifier for the entity.
-   * @param {string} currentStatus - The current tracking status of the entity.
+   * @param {TrackingState} currentStatus - The current tracking status of the entity.
    * @returns {Promise<void>}
    */
   const handleToggle = async (type, id, currentStatus) => {
@@ -565,67 +711,78 @@ const AppController = (() => {
 
     // Series/Seasons
     if (type === "series" || type === "season") {
-      if (currentStatus === STATE_UNTRACKED) {
-        const extraFields = {};
-        if (type === "series") {
-          extraFields.name = PathAnalyzer.formatSeriesName(id) || "Unknown Series";
-        } else {
-          extraFields.name = PathAnalyzer.formatSeasonName(id) || "Unknown Season";
+      switch (currentStatus) {
+        case STATE_UNTRACKED: {
+          const extraFields = {};
+          extraFields.name =
+            type === "series"
+              ? PathAnalyzer.formatSeriesName(id) || "Unknown Series"
+              : PathAnalyzer.formatSeasonName(id) || "Unknown Season";
+          // UNTRACKED → WATCHING
+          await Store.setState(type, id, STATE_WATCHING, extraFields);
+          break;
         }
-        // UNTRACKED → WATCHING
-        await Store.setState(type, id, STATE_WATCHING, extraFields);
-      } else if (currentStatus === STATE_WATCHING) {
-        // WATCHING → COMPLETED (and propagate)
-        await Store.setState(type, id, STATE_COMPLETED);
+        case STATE_WATCHING: {
+          // WATCHING → COMPLETED (and propagate)
+          await Store.setState(type, id, STATE_COMPLETED);
 
-        /**
-         * Sync policy:
-         * - Do NOT emit per-episode updates inside propagation loops.
-         * - Only update local UI here; cross-tab sync must be batched elsewhere.
-         */
-        if (type === "series") {
-          // Mark all seasons and episodes as COMPLETED/SEEN
-          const childSeasons = Store.getSeasonsForSeries(id);
-          for (const seasonId of childSeasons) {
-            await Store.setState("season", seasonId, STATE_COMPLETED);
-            ContentDecorator.updateItemUI(seasonId, { type: "season" });
+          /**
+           * Sync policy:
+           * - Do NOT emit per-episode updates inside propagation loops.
+           * - Only update local UI here; cross-tab sync must be batched elsewhere.
+           */
+          if (type === "series") {
+            // Mark all seasons and episodes as COMPLETED/SEEN
+            const childSeasons = Store.getSeasonsForSeries(id);
+            for (const seasonId of childSeasons) {
+              await Store.setState("season", seasonId, STATE_COMPLETED);
+              ContentDecorator.updateItemUI(seasonId, { type: "season" });
 
-            const episodes = await getEpisodesForSeasonWithFallback(seasonId);
+              const episodes = await getEpisodesForSeasonWithFallback(seasonId);
+              for (const episodeId of episodes) {
+                await Store.setState("episode", episodeId, "seen");
+                ContentDecorator.updateItemUI(episodeId, { type: "episode" });
+              }
+            }
+          } else if (type === "season") {
+            // Mark all episodes of the season as SEEN
+            const episodes = await getEpisodesForSeasonWithFallback(id);
             for (const episodeId of episodes) {
               await Store.setState("episode", episodeId, "seen");
               ContentDecorator.updateItemUI(episodeId, { type: "episode" });
             }
           }
-        } else if (type === "season") {
-          // Mark all episodes of the season as SEEN
-          const episodes = await getEpisodesForSeasonWithFallback(id);
-          for (const episodeId of episodes) {
-            await Store.setState("episode", episodeId, "seen");
-            ContentDecorator.updateItemUI(episodeId, { type: "episode" });
-          }
+          break;
         }
-      } else if (currentStatus === STATE_COMPLETED) {
-        // COMPLETED → UNTRACKED (remove tracking and propagate)
-        await Store.remove(type, id);
+        case STATE_COMPLETED: {
+          // COMPLETED → UNTRACKED (remove tracking and propagate)
+          await Store.remove(type, id);
 
-        if (type === "series") {
-          const childSeasons = Store.getSeasonsForSeries(id);
-          for (const seasonId of childSeasons) {
-            await Store.remove("season", seasonId);
-            ContentDecorator.updateItemUI(seasonId, { type: "season" });
+          if (type === "series") {
+            const childSeasons = Store.getSeasonsForSeries(id);
+            for (const seasonId of childSeasons) {
+              await Store.remove("season", seasonId);
+              ContentDecorator.updateItemUI(seasonId, { type: "season" });
 
-            const episodes = await getEpisodesForSeasonWithFallback(seasonId);
+              const episodes = await getEpisodesForSeasonWithFallback(seasonId);
+              for (const episodeId of episodes) {
+                await Store.clearState("episode", episodeId);
+                ContentDecorator.updateItemUI(episodeId, { type: "episode" });
+              }
+            }
+          } else if (type === "season") {
+            const episodes = await getEpisodesForSeasonWithFallback(id);
             for (const episodeId of episodes) {
               await Store.clearState("episode", episodeId);
               ContentDecorator.updateItemUI(episodeId, { type: "episode" });
             }
           }
-        } else if (type === "season") {
-          const episodes = await getEpisodesForSeasonWithFallback(id);
-          for (const episodeId of episodes) {
-            await Store.clearState("episode", episodeId);
-            ContentDecorator.updateItemUI(episodeId, { type: "episode" });
-          }
+          break;
+        }
+        default: {
+          // Handle unknown states
+          console.warn(`Unknown state: ${currentStatus}`);
+          break;
         }
       }
 
@@ -638,6 +795,7 @@ const AppController = (() => {
     // Movies
     if (type === "movie") {
       const newSeen = currentStatus !== "seen";
+      // eslint-disable-next-line unicorn/prefer-ternary
       if (newSeen) {
         await Store.setState("movie", id, "seen");
       } else {
@@ -645,25 +803,46 @@ const AppController = (() => {
       }
       ContentDecorator.updateItemUI(id, { type: "movie" });
       emitSyncUpdate(type, id);
-      return;
+    }
+  };
+
+  /**
+   * @param {StorageEvent} event - The storage event object.
+   * @returns {Promise<void>}
+   */
+  const storageHandler = async (event) => {
+    if (event.key === Constants.SYNC_CHANNEL_NAME && typeof event.newValue === "string") {
+      const rawValue = event.newValue;
+      await withErrorHandling(
+        async () => {
+          /** @type {SyncPayload} */
+          const data = JSON.parse(rawValue);
+          await Store.receiveSync(data.id, data.seen, data.t);
+        },
+        { logContext: "LocalStorage sync event" },
+      );
     }
   };
 
   const setupSyncChannel = () => {
-    if ("BroadcastChannel" in window) {
+    if ("BroadcastChannel" in globalThis) {
       const channel = new BroadcastChannel(Constants.SYNC_CHANNEL_NAME);
+      /**
+       * @param {MessageEvent<SyncPayload>} event - The message event object.
+       * @returns {Promise<void>}
+       */
       const onMessage = async (event) => {
         const { id, seen, t } = event.data || {};
         await withErrorHandling(() => Store.receiveSync(id, seen, t), {
           logContext: "BroadcastChannel receiveSync",
         });
       };
-      channel.onmessage = onMessage;
+      channel.addEventListener("message", onMessage);
       syncChannel = channel;
 
       registerCleanup(() => {
         try {
-          channel.onmessage = null;
+          channel.removeEventListener("message", onMessage);
           channel.close();
         } catch (error) {
           console.warn("BroadcastChannel close failed:", error);
@@ -676,70 +855,59 @@ const AppController = (() => {
       return;
     }
 
-    const storageHandler = async (event) => {
-      if (event.key === Constants.SYNC_CHANNEL_NAME && event.newValue) {
-        await withErrorHandling(
-          async () => {
-            const data = JSON.parse(event.newValue);
-            await Store.receiveSync(data.id, data.seen, data.t);
-          },
-          { logContext: "LocalStorage sync event" },
-        );
-      }
-    };
-
-    window.addEventListener("storage", storageHandler);
+    globalThis.addEventListener("storage", storageHandler);
     registerCleanup(() => {
-      window.removeEventListener("storage", storageHandler);
+      globalThis.removeEventListener("storage", storageHandler);
     });
     syncChannel = null;
   };
 
+  /**
+   * @param {MouseEvent} event - The mouse event object.
+   * @returns {Promise<void>}
+   */
+  const clickHandler = async (event) => {
+    const target = event.target;
+    const link = target instanceof Element ? target.closest("a[href]") : null;
+    if (!(link instanceof HTMLAnchorElement)) {
+      return;
+    }
+
+    // Only intercept plain left clicks (no modifier keys)
+    const isPlainLeftClick =
+      event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+
+    const pathInfo = PathAnalyzer.analyze(link.href);
+
+    if (!pathInfo.isValid) {
+      return;
+    }
+
+    if (
+      pathInfo.type !== PathAnalyzer.EntityType.EPISODE &&
+      pathInfo.type !== PathAnalyzer.EntityType.MOVIE
+    ) {
+      return;
+    }
+
+    const currentStatus = getTrackingStatus(pathInfo.type, pathInfo.id);
+    if (currentStatus === "seen") {
+      return;
+    }
+
+    if (isPlainLeftClick) {
+      event.preventDefault();
+    }
+    await handleToggle(pathInfo.type, pathInfo.id, currentStatus);
+
+    emitSyncUpdate(pathInfo.type, pathInfo.id);
+
+    if (isPlainLeftClick) {
+      globalThis.location.assign(link.href);
+    }
+  };
+
   const setupGlobalClickListener = () => {
-    const clickHandler = async (event) => {
-      const link = event.target?.closest("a[href]");
-      if (!link) {
-        return;
-      }
-
-      // Only intercept plain left clicks (no modifier keys)
-      const isPlainLeftClick =
-        event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
-
-      const pathInfo = PathAnalyzer.analyze(link.href);
-
-      if (!pathInfo.isValid) {
-        return;
-      }
-
-      if (
-        pathInfo.type !== PathAnalyzer.EntityType.EPISODE &&
-        pathInfo.type !== PathAnalyzer.EntityType.MOVIE
-      ) {
-        return;
-      }
-
-      if (Store.getStatus(pathInfo.type, pathInfo.id) === "seen") {
-        return;
-      }
-
-      if (isPlainLeftClick) {
-        event.preventDefault();
-      }
-      await handleToggle(
-        pathInfo.type,
-        pathInfo.id,
-        Store.getStatus(pathInfo.type, pathInfo.id),
-        link.closest("tr, .episode, .movie"),
-      );
-
-      emitSyncUpdate(pathInfo.type, pathInfo.id);
-
-      if (isPlainLeftClick) {
-        window.location.assign(link.href);
-      }
-    };
-
     document.addEventListener("click", clickHandler, { capture: true, passive: false });
     registerCleanup(() => {
       document.removeEventListener("click", clickHandler, { capture: true });
@@ -754,7 +922,6 @@ const AppController = (() => {
    * - On "PREFS_CHANGE", updates highlight and language, shows toast, and reloads if language changed.
    * - On entity CLEAR, refreshes all decorated items of that type.
    * - On entity CHANGE/REMOVE, refreshes the specific item.
-   *
    * @param {StateChange} change - The state change event object.
    * @returns {void}
    */
@@ -764,7 +931,18 @@ const AppController = (() => {
       return;
     }
     if (change.type === "PREFS_CHANGE") {
-      const { oldPrefs, newPrefs } = change.payload;
+      const payload = change.payload;
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        !("oldPrefs" in payload) ||
+        !("newPrefs" in payload)
+      ) {
+        return;
+      }
+      const { oldPrefs, newPrefs } = /** @type {{ oldPrefs: UserPrefs; newPrefs: UserPrefs }} */ (
+        payload
+      );
       const highlightChanged = oldPrefs.rowHighlight !== newPrefs.rowHighlight;
       const langChanged = oldPrefs.userLang !== newPrefs.userLang;
       if (highlightChanged) {
@@ -780,19 +958,35 @@ const AppController = (() => {
       return;
     }
 
-    // Map entity → lowercase type
-    const TYPE_MAP = {
-      SERIES: "series",
-      SEASON: "season",
-      EPISODE: "episode",
-      MOVIE: "movie",
-    };
     const match = /^([A-Z]+)_(CHANGE|REMOVE|CLEAR)$/.exec(change.type);
     if (!match) {
       return;
     }
-    const [, entity, action] = match;
-    const type = TYPE_MAP[entity];
+    const entity = match[1];
+    const action = match[2];
+    /** @type {ItemType | undefined} */
+    let type;
+    switch (entity) {
+      case "SERIES": {
+        type = "series";
+        break;
+      }
+      case "SEASON": {
+        type = "season";
+        break;
+      }
+      case "EPISODE": {
+        type = "episode";
+        break;
+      }
+      case "MOVIE": {
+        type = "movie";
+        break;
+      }
+      default: {
+        type = undefined;
+      }
+    }
     if (!type) {
       return;
     }
@@ -800,7 +994,7 @@ const AppController = (() => {
     if (action === "CLEAR") {
       // Recalculate and refresh ALL decorated items of that type
       const selector = `[${Constants.ITEM_DECORATED_ATTR}="${type}"]`;
-      for (const item of Utils.$$(selector)) {
+      for (const item of selectAll(selector)) {
         const preferKind =
           type === "series" || type === "season" ? item.getAttribute(Constants.KIND_ATTR) : null;
         const id = ContentDecorator.computeId(item, Constants.LINK_SELECTOR, preferKind);
@@ -831,7 +1025,6 @@ const AppController = (() => {
    * sets up cross-tab sync and global click listeners, decorates all eligible items,
    * and observes dynamic DOM changes for automatic decoration.
    * Also auto-marks the current episode or movie as seen if applicable.
-   *
    * @returns {Promise<void>} Resolves when initialization is complete.
    */
   const init = async () => {
@@ -879,14 +1072,12 @@ const AppController = (() => {
     if (
       currentPathInfo.isValid &&
       (currentPathInfo.type === PathAnalyzer.EntityType.EPISODE ||
-        currentPathInfo.type === PathAnalyzer.EntityType.MOVIE) &&
-      Store.getStatus(currentPathInfo.type, currentPathInfo.id) !== "seen"
+        currentPathInfo.type === PathAnalyzer.EntityType.MOVIE)
     ) {
-      await handleToggle(
-        currentPathInfo.type,
-        currentPathInfo.id,
-        Store.getStatus(currentPathInfo.type, currentPathInfo.id),
-      );
+      const initialStatus = getTrackingStatus(currentPathInfo.type, currentPathInfo.id);
+      if (initialStatus !== "seen") {
+        await handleToggle(currentPathInfo.type, currentPathInfo.id, initialStatus);
+      }
     }
   };
 

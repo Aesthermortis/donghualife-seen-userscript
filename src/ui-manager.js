@@ -1,5 +1,6 @@
 import CSS from "./styles.css";
-import Utils from "./utils.js";
+import { select, selectAll } from "./dom/select.js";
+import { isElementVisible } from "./dom/visibility.js";
 import I18n from "./i18n.js";
 
 /**
@@ -20,19 +21,19 @@ const UIManager = (() => {
   let modalIdCounter = 0;
 
   const getToastContainer = () => {
-    let container = Utils.$("#us-dhl-toast-container");
+    let container = select("#us-dhl-toast-container");
     if (!container) {
       container = document.createElement("div");
       container.id = "us-dhl-toast-container";
       container.className = "us-dhl-toast-container";
-      document.body.appendChild(container);
+      document.body.append(container);
     }
     return container;
   };
 
   const defaultSanitize = (html) => {
     const value = html === null ? "" : String(html);
-    const purifier = typeof globalThis !== "undefined" ? globalThis.DOMPurify : undefined;
+    const purifier = typeof globalThis === "undefined" ? undefined : globalThis.DOMPurify;
     if (purifier && typeof purifier.sanitize === "function") {
       return purifier.sanitize(value, {
         ALLOW_UNKNOWN_PROTOCOLS: false,
@@ -47,15 +48,15 @@ const UIManager = (() => {
   };
 
   const ensureOverlay = () => {
-    let overlay = Utils.$(`.${modalOverlayClass}`);
+    let overlay = select(`.${modalOverlayClass}`);
     if (!overlay) {
       overlay = document.createElement("div");
       overlay.className = modalOverlayClass;
-      overlay.setAttribute("data-ui", "overlay");
+      overlay.dataset.ui = "overlay";
       overlay.tabIndex = -1;
-      document.body.appendChild(overlay);
+      document.body.append(overlay);
     } else if (!document.body.contains(overlay)) {
-      document.body.appendChild(overlay);
+      document.body.append(overlay);
     }
     return overlay;
   };
@@ -92,13 +93,17 @@ const UIManager = (() => {
   };
 
   const removeExistingModal = (overlay) => {
-    const existing = Utils.$(`.${modalClass}`, overlay);
+    const existing = select(`.${modalClass}`, overlay);
     if (existing) {
       existing.remove();
     }
   };
 
-  const destroyModal = (overlay = Utils.$(`.${modalOverlayClass}`)) => {
+  const stopModalClickPropagation = (event) => {
+    event.stopPropagation();
+  };
+
+  const destroyModal = (overlay = select(`.${modalOverlayClass}`)) => {
     if (!overlay) {
       return;
     }
@@ -119,8 +124,8 @@ const UIManager = (() => {
     }
 
     const getFocusable = () =>
-      Utils.$$(focusableSelector, modal).filter(
-        (el) => !el.hasAttribute("disabled") && Utils.isElementVisible(el),
+      selectAll(focusableSelector, modal).filter(
+        (el) => !el.hasAttribute("disabled") && isElementVisible(el),
       );
 
     const focusFirst = () => {
@@ -148,7 +153,7 @@ const UIManager = (() => {
           return;
         }
         const first = focusable[0];
-        const last = focusable[focusable.length - 1];
+        const last = focusable.at(-1);
         const { activeElement } = document;
         if (event.shiftKey) {
           if (activeElement === first || !modal.contains(activeElement)) {
@@ -168,19 +173,15 @@ const UIManager = (() => {
       }
     };
 
-    const stopPropagation = (event) => {
-      event.stopPropagation();
-    };
-
     document.addEventListener("keydown", onKeyDown, true);
     overlay.addEventListener("click", onOverlayClick);
-    modal.addEventListener("click", stopPropagation);
+    modal.addEventListener("click", stopModalClickPropagation);
     focusFirst();
 
     overlay._modalCleanup = () => {
       document.removeEventListener("keydown", onKeyDown, true);
       overlay.removeEventListener("click", onOverlayClick);
-      modal.removeEventListener("click", stopPropagation);
+      modal.removeEventListener("click", stopModalClickPropagation);
     };
   };
 
@@ -194,7 +195,7 @@ const UIManager = (() => {
       closeOnOverlay = true,
     } = options;
 
-    const activeElement = typeof document !== "undefined" ? document.activeElement : null;
+    const activeElement = typeof document === "undefined" ? null : document.activeElement;
     const previouslyFocusedElement =
       activeElement && typeof activeElement.focus === "function" ? activeElement : null;
 
@@ -212,14 +213,14 @@ const UIManager = (() => {
     }
 
     if (content instanceof Node) {
-      modal.appendChild(content);
+      modal.append(content);
     } else if (typeof content === "string") {
       if (allowHTML) {
         const safe = sanitize(content);
         if (typeof safe === "string") {
           modal.insertAdjacentHTML("afterbegin", safe);
         } else if (safe instanceof Node) {
-          modal.appendChild(safe);
+          modal.append(safe);
         } else {
           modal.textContent = "";
         }
@@ -230,7 +231,7 @@ const UIManager = (() => {
       modal.textContent = String(content);
     }
 
-    overlay.appendChild(modal);
+    overlay.append(modal);
     lockScroll();
 
     const restoreFocus = () => {
@@ -290,19 +291,19 @@ const UIManager = (() => {
 
   return {
     injectCSS: () => {
-      if (Utils.$("#us-dhl-seen-style")) {
+      if (select("#us-dhl-seen-style")) {
         return;
       }
       const style = document.createElement("style");
       style.id = "us-dhl-seen-style";
       style.textContent = CSS;
-      document.head.appendChild(style);
+      document.head.append(style);
     },
     showToast: (message, duration = 3000) => {
       const toast = document.createElement("div");
       toast.className = "us-dhl-toast";
       toast.textContent = message;
-      getToastContainer().appendChild(toast);
+      getToastContainer().append(toast);
       setTimeout(() => toast.remove(), duration);
     },
     showConfirm: ({ title, text, okLabel = I18n.t("accept"), cancelLabel = I18n.t("cancel") }) =>
@@ -319,7 +320,7 @@ const UIManager = (() => {
         body.className = "us-dhl-modal-body";
         const paragraph = document.createElement("p");
         paragraph.textContent = text;
-        body.appendChild(paragraph);
+        body.append(paragraph);
 
         const footer = document.createElement("div");
         footer.className = "us-dhl-modal-footer";
@@ -486,7 +487,7 @@ const UIManager = (() => {
       closeButton.className = "us-dhl-modal-btn primary";
       closeButton.type = "button";
       closeButton.textContent = I18n.t("close");
-      footer.appendChild(closeButton);
+      footer.append(closeButton);
 
       fragment.append(header, body, footer);
 
@@ -520,16 +521,16 @@ const UIManager = (() => {
       const menu = document.createElement("div");
       menu.className = "us-dhl-settings-menu";
 
-      actions.forEach((action, index) => {
+      for (const [index, action] of actions.entries()) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = `us-dhl-modal-btn ${action.isDestructive ? "secondary" : "primary"}`;
         button.dataset.actionIndex = String(index);
         button.textContent = action.label;
-        menu.appendChild(button);
-      });
+        menu.append(button);
+      }
 
-      body.appendChild(menu);
+      body.append(menu);
       fragment.append(header, body);
 
       const { modal, destroy, setOnRequestClose } = createModal(fragment, {
@@ -548,8 +549,15 @@ const UIManager = (() => {
         if (!button) {
           return;
         }
-        const actionIndex = parseInt(button.dataset.actionIndex || "", 10);
-        const selectedAction = Number.isInteger(actionIndex) ? actions[actionIndex] : undefined;
+        const { actionIndex: actionIndexRaw } = button.dataset;
+        if (typeof actionIndexRaw !== "string" || actionIndexRaw.length === 0) {
+          return;
+        }
+        const actionIndex = Number.parseInt(actionIndexRaw, 10);
+        if (!Number.isInteger(actionIndex)) {
+          return;
+        }
+        const selectedAction = actions.at(actionIndex);
         if (!selectedAction) {
           return;
         }
@@ -571,7 +579,7 @@ const UIManager = (() => {
       progress.max = 100;
       progress.className = "us-dhl-progress";
       toast.append(messageWrapper, progress);
-      getToastContainer().appendChild(toast);
+      getToastContainer().append(toast);
       return {
         update: (value) => {
           const progressEl = toast.querySelector("progress");

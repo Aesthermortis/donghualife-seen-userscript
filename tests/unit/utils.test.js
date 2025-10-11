@@ -1,25 +1,27 @@
 import { afterEach, describe, expect, jest, test } from "@jest/globals";
-import Utils from "../../src/utils.js";
+import { select, selectAll } from "../../src/dom/select.js";
+import { getSeriesNameForId } from "../../src/dom/titles.js";
+import { debounce } from "../../src/timing/debounce.js";
 
-describe("Utils", () => {
-  afterEach(() => {
-    document.body.innerHTML = "";
-    jest.useRealTimers();
-  });
+afterEach(() => {
+  document.body.innerHTML = "";
+  jest.useRealTimers();
+});
 
-  test("$ returns the first matching element", () => {
+describe("dom/select", () => {
+  test("select returns the first matching element", () => {
     document.body.innerHTML = `
       <section>
         <span class="item">first</span>
         <span class="item">second</span>
       </section>
     `;
-    const firstItem = Utils.$(".item");
+    const firstItem = select(".item");
     expect(firstItem).not.toBeNull();
     expect(firstItem?.textContent?.trim()).toBe("first");
   });
 
-  test("$$ returns all matching elements as an array", () => {
+  test("selectAll returns all matching elements as an array", () => {
     document.body.innerHTML = `
       <section>
         <span class="item">alpha</span>
@@ -27,19 +29,21 @@ describe("Utils", () => {
         <span class="item">gamma</span>
       </section>
     `;
-    const items = Utils.$$(".item");
+    const items = selectAll(".item");
     expect(Array.isArray(items)).toBe(true);
     expect(items).toHaveLength(3);
     expect(items.map((el) => el.textContent?.trim())).toEqual(["alpha", "beta", "gamma"]);
   });
+});
 
+describe("dom/titles", () => {
   test("getSeriesNameForId returns the matching link text", () => {
     document.body.innerHTML = `
       <main>
         <a href="/series/abc123/details">  Example Series </a>
       </main>
     `;
-    expect(Utils.getSeriesNameForId("/series/abc123")).toBe("Example Series");
+    expect(getSeriesNameForId("/series/abc123")).toBe("Example Series");
   });
 
   test("getSeriesNameForId falls back to page header", () => {
@@ -48,13 +52,15 @@ describe("Utils", () => {
         <h1 class="title">Fallback Title</h1>
       </header>
     `;
-    expect(Utils.getSeriesNameForId("/series/missing")).toBe("Fallback Title");
+    expect(getSeriesNameForId("/series/missing")).toBe("Fallback Title");
   });
+});
 
+describe("timing/debounce", () => {
   test("debounce triggers only once after the wait period", () => {
     jest.useFakeTimers();
     const spy = jest.fn();
-    const debounced = Utils.debounce(spy, 50);
+    const debounced = debounce(spy, 50);
     debounced();
     debounced();
     debounced();
@@ -63,6 +69,6 @@ describe("Utils", () => {
     expect(spy).not.toHaveBeenCalled();
 
     jest.advanceTimersByTime(1);
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledOnce();
   });
 });

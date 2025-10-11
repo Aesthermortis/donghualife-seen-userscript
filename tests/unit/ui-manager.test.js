@@ -6,20 +6,10 @@ const i18nModuleMock = {
   },
 };
 
-const utilsModuleMock = {
-  default: {
-    $: jest.fn(),
-    $$: jest.fn(() => []),
-    isElementVisible: jest.fn(() => true),
-  },
-};
-
 await jest.unstable_mockModule("../../src/styles.css", () => ({ default: {} }));
 await jest.unstable_mockModule("../../src/i18n.js", () => i18nModuleMock);
-await jest.unstable_mockModule("../../src/utils.js", () => utilsModuleMock);
 
 const { default: UIManager } = await import("../../src/ui-manager.js");
-const { default: Utils } = await import("../../src/utils.js");
 
 describe("UIManager", () => {
   let triggerButton;
@@ -29,15 +19,9 @@ describe("UIManager", () => {
     triggerButton = document.createElement("button");
     triggerButton.id = "trigger";
     triggerButton.textContent = "Open Modal";
-    document.body.appendChild(triggerButton);
+    document.body.append(triggerButton);
 
     jest.clearAllMocks();
-
-    Utils.$.mockImplementation((selector, parent = document) => parent.querySelector(selector));
-    Utils.$$.mockImplementation((selector, parent = document) =>
-      Array.from(parent.querySelectorAll(selector)),
-    );
-    Utils.isElementVisible.mockReturnValue(true);
   });
 
   describe("Modal Focus Management", () => {
