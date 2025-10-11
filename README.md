@@ -20,7 +20,7 @@ Install a userscript manager:
 - [Violentmonkey](https://violentmonkey.github.io/)
 - [Greasemonkey](https://www.greasespot.net/)
 
-[Click here to install the script](https://github.com/Aesthermortis/donghualife-seen-userscript/raw/main/donghualife-seen.user.js)
+[Click here to install the script](https://github.com/Aesthermortis/donghualife-seen-userscript/releases/latest/download/donghualife-seen.user.js)
 _(opens directly in your userscript manager)_
 
 ## 📸 Preview
@@ -41,3 +41,7 @@ cd donghualife-seen-userscript
 
 Pull requests are welcome!
 If you encounter issues, please [open an issue](https://github.com/Aesthermortis/donghualife-seen-userscript/issues)
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/Aesthermortis/donghualife-seen-userscript/blob/main/LICENSE) file for details.
