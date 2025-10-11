@@ -1,3 +1,18 @@
+## [4.0.0](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.7.0...v4.0.0) (2025-10-11)
+
+### ⚠ BREAKING CHANGES
+
+- **utils:** import paths changed for utils consumers.
+
+### Bug Fixes
+
+- **build:** normalize tagged semver versions ([4b38aae](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/4b38aae44aa9dc60e03de5fd67b2301d3856543a))
+- **build:** validate metadata version via semver ([54567be](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/54567be721d3761ea1741b28d508a59be4c3a6fe))
+
+### Code Refactoring
+
+- **utils:** split monolithic utils.js into focused modules ([d38db08](https://github.com/Aesthermortis/donghualife-seen-userscript/commit/d38db081f98d598a85b0a692c128e9bc8a575563))
+
 ## [3.7.0](https://github.com/Aesthermortis/donghualife-seen-userscript/compare/v3.6.2...v3.7.0) (2025-10-05)
 
 ### Features
