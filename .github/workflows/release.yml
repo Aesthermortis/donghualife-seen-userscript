@@ -19,13 +19,15 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: "24.x"
+          node-version: 24.x
           check-latest: true
-          cache: "npm"
+          cache: npm
 
       - name: Upgrade npm to v11
         run: |
@@ -34,9 +36,9 @@ jobs:
           npm -v
 
       - name: Install dependencies
-        run: npm ci --no-audit --fund=false
+        run: npm ci --no-audit --fund=false --include=dev
 
       - name: Release
-        run: npx semantic-release
+        run: npx -y semantic-release@24
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
